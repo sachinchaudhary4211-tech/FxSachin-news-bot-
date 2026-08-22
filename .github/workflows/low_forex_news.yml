@@ -2,7 +2,6 @@ name: Low Impact Forex News Bot
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: "*/5 * * * *"
 
@@ -24,21 +23,28 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install requests pillow
+          pip install -r requirements.txt
 
       - name: Run Low Impact Forex News Bot
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
           python low_forex_news.py
 
       - name: Save sent low impact events
         run: |
           git config user.name "Forex News Bot"
-          git config user.email "bot@github.com"
+          git config user.email "actions@github.com"
 
-          git add sent_low_events.json
+          if [ -f sent_low_events.json ]; then
+            git add sent_low_events.json
 
-          git diff --cached --quiet || git commit -m "Update sent low impact events"
-
-          git push
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+            else
+              git commit -m "Update sent low impact events"
+              git push
+            fi
+          else
+            echo "sent_low_events.json was not created. Skipping save."
+          fi

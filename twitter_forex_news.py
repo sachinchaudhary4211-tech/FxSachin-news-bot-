@@ -1,185 +1,98 @@
 import os
 import json
-import time
 import requests
 from datetime import datetime, timezone
 
 
-# =========================================================
+# ==========================================
 # CONFIGURATION
-# =========================================================
+# ==========================================
 
-# X/Twitter API Bearer Token
 X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# Discord Webhook URL
-DISCORD_WEBHOOK_URL = os.getenv("https://discord.com/api/webhooks/1540701416304279682/hoaYmfCMjCEdFfjRgq_XCcMLu4oHeXSBqR2G9r0kd-6MbQ0zBKl6Y8XsWMTa1OIH864o")
+SENT_FILE = "sent_events.json"
 
-# Check every 60 seconds
-CHECK_INTERVAL = 60
-
-
-# =========================================================
-# FILE TO REMEMBER SENT POSTS
-# =========================================================
-
-SENT_FILE = "sent_twitter_posts.json"
+# Maximum posts to request
+MAX_RESULTS = 20
 
 
-# =========================================================
-# TRUSTED ACCOUNTS
-# =========================================================
+# ==========================================
+# X SEARCH QUERY
+# ==========================================
 
-TRUSTED_ACCOUNTS = [
-    "federalreserve",
-    "USTreasury",
-    "Reuters",
-    "WSJ",
-    "Bloomberg",
-]
-
-
-# =========================================================
-# HIGH IMPACT KEYWORDS
-# =========================================================
-
-HIGH_IMPACT_KEYWORDS = [
-    "federal reserve",
-    "fomc",
-    "powell",
-    "interest rate",
-    "rate hike",
-    "rate cut",
-    "emergency meeting",
-
-    "cpi",
-    "inflation",
-    "nonfarm payroll",
-    "nfp",
-    "payrolls",
-    "jobs report",
-    "unemployment",
-    "gdp",
-    "retail sales",
-
-    "us dollar",
-    "usd",
-    "dxy",
-    "dollar index",
-
-    "us treasury",
-    "treasury yields",
-    "bond yields",
-
-    "tariffs",
-    "sanctions",
-    "trade war",
-    "intervention",
-
-    "breaking",
-    "emergency",
-    "war",
-]
+QUERY = """
+(
+USD OR "US Dollar" OR forex OR "foreign exchange"
+OR FederalReserve OR "Federal Reserve" OR Fed
+OR FOMC OR Powell
+OR CPI OR inflation
+OR NFP OR payrolls OR "Nonfarm Payrolls"
+OR "interest rates"
+OR "US jobs"
+OR "unemployment rate"
+OR GDP OR PCE
+OR "retail sales"
+OR "consumer confidence"
+OR "Treasury yields"
+OR recession
+OR "rate hike"
+OR "rate cut"
+)
+-lang:und -is:retweet
+"""
 
 
-# =========================================================
+# ==========================================
+# CHECK ENVIRONMENT VARIABLES
+# ==========================================
+
+if not X_BEARER_TOKEN:
+    raise ValueError("X_BEARER_TOKEN is missing.")
+
+if not DISCORD_WEBHOOK_URL:
+    raise ValueError("DISCORD_WEBHOOK_URL is missing.")
+
+
+# ==========================================
 # LOAD SENT POSTS
-# =========================================================
+# ==========================================
 
 def load_sent_posts():
     if not os.path.exists(SENT_FILE):
-        return set()
+        return []
 
     try:
         with open(SENT_FILE, "r", encoding="utf-8") as file:
-            return set(json.load(file))
+            data = json.load(file)
 
-    except Exception as error:
-        print(f"Error loading sent posts: {error}")
-        return set()
+            if isinstance(data, list):
+                return data
+
+            return []
+
+    except Exception:
+        return []
 
 
-# =========================================================
+# ==========================================
 # SAVE SENT POSTS
-# =========================================================
+# ==========================================
 
 def save_sent_posts(sent_posts):
-    try:
-        sent_list = list(sent_posts)[-500:]
 
-        with open(SENT_FILE, "w", encoding="utf-8") as file:
-            json.dump(sent_list, file)
+    # Keep only the latest 1000 IDs
+    sent_posts = sent_posts[-1000:]
 
-    except Exception as error:
-        print(f"Error saving posts: {error}")
+    with open(SENT_FILE, "w", encoding="utf-8") as file:
+        json.dump(sent_posts, file, indent=2)
 
 
-# =========================================================
-# CHECK IF POST IS HIGH IMPACT
-# =========================================================
+# ==========================================
+# GET X POSTS
+# ==========================================
 
-def is_high_impact(text):
-    text_lower = text.lower()
-
-    matches = []
-
-    for keyword in HIGH_IMPACT_KEYWORDS:
-        if keyword in text_lower:
-            matches.append(keyword)
-
-    if matches:
-        return True, matches
-
-    return False, []
-
-
-# =========================================================
-# BUILD X SEARCH QUERY
-# =========================================================
-
-def build_query():
-
-    accounts_query = " OR ".join(
-        [f"from:{account}" for account in TRUSTED_ACCOUNTS]
-    )
-
-    keyword_query = (
-        '"Federal Reserve" OR '
-        'FOMC OR '
-        'Powell OR '
-        '"interest rate" OR '
-        '"rate hike" OR '
-        '"rate cut" OR '
-        'CPI OR '
-        'inflation OR '
-        '"Nonfarm Payroll" OR '
-        'NFP OR '
-        '"jobs report" OR '
-        '"US dollar" OR '
-        'USD OR '
-        'DXY OR '
-        '"Treasury yields" OR '
-        'tariffs OR '
-        'sanctions'
-    )
-
-    query = (
-        f"(({accounts_query}) OR ({keyword_query})) "
-        f"lang:en -is:retweet"
-    )
-
-    return query
-
-
-# =========================================================
-# GET RECENT X POSTS
-# =========================================================
-
-def get_recent_posts():
-
-    if not X_BEARER_TOKEN:
-        print("ERROR: X_BEARER_TOKEN is missing.")
-        return []
+def get_x_posts():
 
     url = "https://api.x.com/2/tweets/search/recent"
 
@@ -188,222 +101,264 @@ def get_recent_posts():
     }
 
     params = {
-        "query": build_query(),
-        "max_results": 20,
-        "tweet.fields": "created_at,author_id",
+        "query": QUERY,
+        "max_results": MAX_RESULTS,
+        "tweet.fields": "created_at,author_id,public_metrics",
         "expansions": "author_id",
-        "user.fields": "username,name"
+        "user.fields": "username,name,verified"
     }
 
-    try:
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+        timeout=30
+    )
 
-        response = requests.get(
-            url,
-            headers=headers,
-            params=params,
-            timeout=30
-        )
+    if response.status_code != 200:
 
-        print(f"X API Status: {response.status_code}")
+        print("X API ERROR:")
+        print(response.status_code)
+        print(response.text)
 
-        if response.status_code != 200:
-            print(response.text)
-            return []
-
-        data = response.json()
-
-        posts = data.get("data", [])
-
-        users = {}
-
-        for user in data.get("includes", {}).get("users", []):
-            users[user["id"]] = user
-
-        result = []
-
-        for post in posts:
-
-            author = users.get(
-                post.get("author_id"),
-                {}
-            )
-
-            result.append({
-                "id": post.get("id"),
-                "text": post.get("text", ""),
-                "created_at": post.get("created_at", ""),
-                "username": author.get("username", "unknown"),
-                "name": author.get("name", "Unknown Source")
-            })
-
-        return result
-
-    except Exception as error:
-        print(f"Error getting X posts: {error}")
         return []
 
+    data = response.json()
 
-# =========================================================
-# SEND TO DISCORD
-# =========================================================
+    tweets = data.get("data", [])
+    users = data.get("includes", {}).get("users", [])
 
-def send_discord_alert(post, matched_keywords):
-
-    username = post["username"]
-
-    post_url = f"https://x.com/{username}/status/{post['id']}"
-
-    embed = {
-
-        "title": "🚨 HIGH IMPACT FOREX / USD NEWS",
-
-        "description": (
-            f"**Source:** {post['name']} (@{username})\n\n"
-            f"**News:**\n{post['text'][:3500]}\n\n"
-            f"**Possible Market Impact:** 🔴 HIGH\n"
-            f"**Currency Focus:** 🇺🇸 USD / Forex\n"
-            f"**Matched Keywords:** {', '.join(matched_keywords[:5])}\n\n"
-            f"🔗 [View Original X Post]({post_url})"
-        ),
-
-        "timestamp": datetime.now(
-            timezone.utc
-        ).isoformat(),
-
-        "footer": {
-            "text": "Forex Breaking News Bot"
-        }
+    users_dict = {
+        user["id"]: user
+        for user in users
     }
 
-    payload = {
-        "embeds": [embed]
-    }
+    results = []
 
-    try:
+    for tweet in tweets:
 
-        response = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json=payload,
-            timeout=30
+        author_id = tweet.get("author_id")
+
+        user = users_dict.get(
+            author_id,
+            {}
         )
 
-        print(f"Discord Status: {response.status_code}")
+        username = user.get(
+            "username",
+            "unknown"
+        )
 
-        if response.status_code in [200, 204]:
+        results.append({
+            "id": tweet.get("id"),
+            "text": tweet.get("text", ""),
+            "username": username,
+            "name": user.get("name", username),
+            "created_at": tweet.get("created_at", "")
+        })
 
-            print(f"SUCCESS: Sent post {post['id']}")
+    return results
+
+
+# ==========================================
+# HIGH IMPACT FILTER
+# ==========================================
+
+def is_high_impact(text):
+
+    text = text.lower()
+
+    high_impact_words = [
+
+        "federal reserve",
+        "fomc",
+        "jerome powell",
+        "powell",
+
+        "interest rate",
+        "interest rates",
+        "rate hike",
+        "rate cut",
+
+        "inflation",
+        "cpi",
+        "pce",
+
+        "nonfarm payroll",
+        "payrolls",
+        "nfp",
+
+        "unemployment",
+        "jobs report",
+        "employment report",
+
+        "gdp",
+
+        "recession",
+
+        "us dollar",
+        "usd",
+
+        "treasury yield",
+        "bond yields",
+
+        "emergency rate",
+
+        "fed chair",
+
+        "hawkish",
+        "dovish",
+
+        "retail sales"
+    ]
+
+    for word in high_impact_words:
+
+        if word in text:
             return True
 
+    return False
+
+
+# ==========================================
+# SEND DISCORD MESSAGE
+# ==========================================
+
+def send_to_discord(post):
+
+    tweet_id = post["id"]
+    username = post["username"]
+    name = post["name"]
+    text = post["text"]
+
+    tweet_url = (
+        f"https://x.com/"
+        f"{username}/status/"
+        f"{tweet_id}"
+    )
+
+    payload = {
+
+        "username": "Forex News Bot",
+
+        "embeds": [
+            {
+
+                "title": "🚨 HIGH IMPACT FOREX / USD NEWS",
+
+                "description": text[:4000],
+
+                "url": tweet_url,
+
+                "color": 15158332,
+
+                "fields": [
+
+                    {
+                        "name": "Source",
+                        "value": f"{name} (@{username})",
+                        "inline": True
+                    },
+
+                    {
+                        "name": "Market",
+                        "value": "USD / Forex",
+                        "inline": True
+                    }
+
+                ],
+
+                "footer": {
+                    "text": "X Forex News Monitor"
+                },
+
+                "timestamp": datetime.now(
+                    timezone.utc
+                ).isoformat()
+
+            }
+        ]
+
+    }
+
+    response = requests.post(
+        DISCORD_WEBHOOK_URL,
+        json=payload,
+        timeout=30
+    )
+
+    if response.status_code not in [200, 204]:
+
+        print("DISCORD ERROR:")
+        print(response.status_code)
         print(response.text)
+
         return False
 
-    except Exception as error:
-
-        print(f"Discord error: {error}")
-        return False
+    return True
 
 
-# =========================================================
-# CHECK NEWS
-# =========================================================
+# ==========================================
+# MAIN
+# ==========================================
 
-def check_news(sent_posts):
+def main():
 
-    print("\n----------------------------------")
-    print("Checking X/Twitter forex news...")
-    print("----------------------------------")
+    print("Checking X for USD and Forex news...")
 
-    posts = get_recent_posts()
+    sent_posts = load_sent_posts()
 
-    if not posts:
-        print("No new posts found.")
-        return
+    posts = get_x_posts()
 
-    # Send older posts first
-    posts.reverse()
+    print(f"Posts found: {len(posts)}")
+
+    new_posts = []
 
     for post in posts:
 
         post_id = post["id"]
 
-        # Skip already processed posts
         if post_id in sent_posts:
             continue
 
-        important, keywords = is_high_impact(
-            post["text"]
-        )
+        text = post["text"]
 
-        if not important:
-
-            print(
-                f"Skipped: {post['id']} - not high impact"
-            )
-
-            sent_posts.add(post_id)
+        if not is_high_impact(text):
             continue
 
-        print("\n🚨 HIGH IMPACT NEWS FOUND")
-        print(f"Source: @{post['username']}")
-        print(f"Text: {post['text']}")
-        print(f"Keywords: {keywords}")
+        new_posts.append(post)
 
-        success = send_discord_alert(
-            post,
-            keywords
+    # Send oldest first
+    new_posts.reverse()
+
+    print(
+        f"New high impact posts: "
+        f"{len(new_posts)}"
+    )
+
+    for post in new_posts:
+
+        print(
+            f"Sending: "
+            f"{post['username']}"
         )
+
+        success = send_to_discord(post)
 
         if success:
 
-            sent_posts.add(post_id)
+            sent_posts.append(
+                post["id"]
+            )
 
-            save_sent_posts(sent_posts)
+    save_sent_posts(sent_posts)
+
+    print("Finished.")
 
 
-# =========================================================
-# START BOT
-# =========================================================
-
-def main():
-
-    print("==================================")
-    print("FOREX X NEWS BOT STARTED")
-    print("==================================")
-
-    if not DISCORD_WEBHOOK_URL:
-
-        print(
-            "ERROR: DISCORD_WEBHOOK_URL is missing."
-        )
-
-        return
-
-    if not X_BEARER_TOKEN:
-
-        print(
-            "ERROR: X_BEARER_TOKEN is missing."
-        )
-
-        return
-
-    sent_posts = load_sent_posts()
-
-    print(
-        f"Loaded {len(sent_posts)} old posts."
-    )
-
-    while True:
-
-        try:
-            check_news(sent_posts)
-
-        except Exception as error:
-            print(f"Main loop error: {error}")
-
-        print(f"\nWaiting {CHECK_INTERVAL} seconds...")
-
-        time.sleep(CHECK_INTERVAL)
-
+# ==========================================
+# RUN
+# ==========================================
 
 if __name__ == "__main__":
     main()

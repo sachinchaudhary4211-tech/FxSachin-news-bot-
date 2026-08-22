@@ -2,11 +2,11 @@ name: Forex Factory News
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
-  run-news-bot:
+  forex-news:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,11 +16,10 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.x"
 
-      - name: Install dependencies
-        run: |
-          pip install requests feedparser
+      - name: Install requests
+        run: pip install requests
 
       - name: Run Forex News Bot
         run: python forex_news.py

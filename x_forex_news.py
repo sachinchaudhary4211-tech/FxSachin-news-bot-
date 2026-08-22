@@ -1,64 +1,94 @@
 import os
 import json
+import hashlib
 import requests
+import feedparser
 from datetime import datetime, timezone
 
+# ==============================
+# SETTINGS
+# ==============================
 
-# ==========================================
-# CONFIGURATION
-# ==========================================
-
-X_BEARER_TOKEN = os.getenv("X_BEARER_TOKEN")
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 SENT_FILE = "sent_events.json"
 
-# Maximum posts to request
-MAX_RESULTS = 20
+RSS_FEEDS = [
+    "https://www.forexlive.com/feed/",
+    "https://www.myfxbook.com/rss/forex-news",
+]
+
+# Important Forex / USD keywords
+HIGH_IMPACT_KEYWORDS = [
+    # USD / Federal Reserve
+    "federal reserve",
+    "fed ",
+    "fomc",
+    "powell",
+    "interest rate",
+    "rate hike",
+    "rate cut",
+    "us inflation",
+    "cpi",
+    "core cpi",
+    "pce",
+    "nonfarm",
+    "nfp",
+    "payroll",
+    "unemployment",
+    "jobs report",
+    "gdp",
+
+    # USD / US economy
+    "us dollar",
+    "dollar index",
+    "usd",
+    "treasury",
+    "bond yield",
+
+    # Forex currencies
+    "eur",
+    "gbp",
+    "jpy",
+    "aud",
+    "cad",
+    "nzd",
+    "chf",
+
+    # Central banks
+    "ecb",
+    "bank of england",
+    "boe",
+    "bank of japan",
+    "boj",
+    "rba",
+    "bank of canada",
+    "boc",
+
+    # Major Forex market events
+    "currency intervention",
+    "forex market",
+    "fx market",
+]
+
+# Words that make a news item more important
+URGENT_KEYWORDS = [
+    "breaking",
+    "emergency",
+    "unexpected",
+    "surprise",
+    "urgent",
+    "crisis",
+    "intervention",
+    "rate decision",
+]
 
 
-# ==========================================
-# X SEARCH QUERY
-# ==========================================
+# ==============================
+# LOAD SENT NEWS
+# ==============================
 
-QUERY = """
-(
-USD OR "US Dollar" OR forex OR "foreign exchange"
-OR FederalReserve OR "Federal Reserve" OR Fed
-OR FOMC OR Powell
-OR CPI OR inflation
-OR NFP OR payrolls OR "Nonfarm Payrolls"
-OR "interest rates"
-OR "US jobs"
-OR "unemployment rate"
-OR GDP OR PCE
-OR "retail sales"
-OR "consumer confidence"
-OR "Treasury yields"
-OR recession
-OR "rate hike"
-OR "rate cut"
-)
--lang:und -is:retweet
-"""
-
-
-# ==========================================
-# CHECK ENVIRONMENT VARIABLES
-# ==========================================
-
-if not X_BEARER_TOKEN:
-    raise ValueError("X_BEARER_TOKEN is missing.")
-
-if not DISCORD_WEBHOOK_URL:
-    raise ValueError("DISCORD_WEBHOOK_URL is missing.")
-
-
-# ==========================================
-# LOAD SENT POSTS
-# ==========================================
-
-def load_sent_posts():
+def load_sent_news():
     if not os.path.exists(SENT_FILE):
         return []
 
@@ -70,295 +100,253 @@ def load_sent_posts():
                 return data
 
             return []
-
     except Exception:
         return []
 
 
-# ==========================================
-# SAVE SENT POSTS
-# ==========================================
+# ==============================
+# SAVE SENT NEWS
+# ==============================
 
-def save_sent_posts(sent_posts):
-
-    # Keep only the latest 1000 IDs
-    sent_posts = sent_posts[-1000:]
+def save_sent_news(sent_news):
+    # Keep only latest 500 IDs
+    sent_news = sent_news[-500:]
 
     with open(SENT_FILE, "w", encoding="utf-8") as file:
-        json.dump(sent_posts, file, indent=2)
+        json.dump(sent_news, file, indent=2)
 
 
-# ==========================================
-# GET X POSTS
-# ==========================================
+# ==============================
+# CREATE NEWS ID
+# ==============================
 
-def get_x_posts():
+def create_news_id(title, link):
+    text = f"{title}|{link}"
 
-    url = "https://api.x.com/2/tweets/search/recent"
+    return hashlib.sha256(
+        text.encode("utf-8")
+    ).hexdigest()
 
-    headers = {
-        "Authorization": f"Bearer {X_BEARER_TOKEN}"
-    }
 
-    params = {
-        "query": QUERY,
-        "max_results": MAX_RESULTS,
-        "tweet.fields": "created_at,author_id,public_metrics",
-        "expansions": "author_id",
-        "user.fields": "username,name,verified"
-    }
+# ==============================
+# CHECK IMPORTANT NEWS
+# ==============================
 
-    response = requests.get(
-        url,
-        headers=headers,
-        params=params,
-        timeout=30
+def is_high_impact(title, summary):
+    text = f"{title} {summary}".lower()
+
+    keyword_found = any(
+        keyword.lower() in text
+        for keyword in HIGH_IMPACT_KEYWORDS
     )
 
-    if response.status_code != 200:
-
-        print("X API ERROR:")
-        print(response.status_code)
-        print(response.text)
-
-        return []
-
-    data = response.json()
-
-    tweets = data.get("data", [])
-    users = data.get("includes", {}).get("users", [])
-
-    users_dict = {
-        user["id"]: user
-        for user in users
-    }
-
-    results = []
-
-    for tweet in tweets:
-
-        author_id = tweet.get("author_id")
-
-        user = users_dict.get(
-            author_id,
-            {}
-        )
-
-        username = user.get(
-            "username",
-            "unknown"
-        )
-
-        results.append({
-            "id": tweet.get("id"),
-            "text": tweet.get("text", ""),
-            "username": username,
-            "name": user.get("name", username),
-            "created_at": tweet.get("created_at", "")
-        })
-
-    return results
-
-
-# ==========================================
-# HIGH IMPACT FILTER
-# ==========================================
-
-def is_high_impact(text):
-
-    text = text.lower()
-
-    high_impact_words = [
-
-        "federal reserve",
-        "fomc",
-        "jerome powell",
-        "powell",
-
-        "interest rate",
-        "interest rates",
-        "rate hike",
-        "rate cut",
-
-        "inflation",
-        "cpi",
-        "pce",
-
-        "nonfarm payroll",
-        "payrolls",
-        "nfp",
-
-        "unemployment",
-        "jobs report",
-        "employment report",
-
-        "gdp",
-
-        "recession",
-
-        "us dollar",
-        "usd",
-
-        "treasury yield",
-        "bond yields",
-
-        "emergency rate",
-
-        "fed chair",
-
-        "hawkish",
-        "dovish",
-
-        "retail sales"
-    ]
-
-    for word in high_impact_words:
-
-        if word in text:
-            return True
-
-    return False
-
-
-# ==========================================
-# SEND DISCORD MESSAGE
-# ==========================================
-
-def send_to_discord(post):
-
-    tweet_id = post["id"]
-    username = post["username"]
-    name = post["name"]
-    text = post["text"]
-
-    tweet_url = (
-        f"https://x.com/"
-        f"{username}/status/"
-        f"{tweet_id}"
+    urgent_found = any(
+        keyword.lower() in text
+        for keyword in URGENT_KEYWORDS
     )
+
+    return keyword_found, urgent_found
+
+
+# ==============================
+# SEND TO DISCORD
+# ==============================
+
+def send_to_discord(title, summary, link, source, urgent=False):
+
+    if not DISCORD_WEBHOOK_URL:
+        print("ERROR: DISCORD_WEBHOOK_URL is missing.")
+        return False
+
+    title_prefix = "🚨 HIGH IMPACT FOREX NEWS"
+
+    if urgent:
+        title_prefix = "🔥 BREAKING FOREX NEWS"
+
+    description = summary.strip()
+
+    if not description:
+        description = "Important Forex or USD market news detected."
+
+    # Discord embed descriptions have limits
+    description = description[:3500]
 
     payload = {
-
         "username": "Forex News Bot",
-
         "embeds": [
             {
-
-                "title": "🚨 HIGH IMPACT FOREX / USD NEWS",
-
-                "description": text[:4000],
-
-                "url": tweet_url,
-
-                "color": 15158332,
-
+                "title": f"{title_prefix}\n\n{title}",
+                "description": description,
+                "url": link,
                 "fields": [
-
                     {
                         "name": "Source",
-                        "value": f"{name} (@{username})",
+                        "value": source,
                         "inline": True
                     },
-
                     {
-                        "name": "Market",
-                        "value": "USD / Forex",
+                        "name": "Time",
+                        "value": datetime.now(
+                            timezone.utc
+                        ).strftime("%Y-%m-%d %H:%M UTC"),
                         "inline": True
                     }
-
                 ],
-
                 "footer": {
-                    "text": "X Forex News Monitor"
-                },
-
-                "timestamp": datetime.now(
-                    timezone.utc
-                ).isoformat()
-
+                    "text": "USD & Forex Market News"
+                }
             }
         ]
-
     }
 
-    response = requests.post(
-        DISCORD_WEBHOOK_URL,
-        json=payload,
-        timeout=30
-    )
+    try:
+        response = requests.post(
+            DISCORD_WEBHOOK_URL,
+            json=payload,
+            timeout=15
+        )
 
-    if response.status_code not in [200, 204]:
+        if response.status_code in [200, 204]:
+            print("SUCCESS: Discord message sent.")
+            return True
 
-        print("DISCORD ERROR:")
-        print(response.status_code)
-        print(response.text)
+        print(
+            "DISCORD ERROR:",
+            response.status_code,
+            response.text
+        )
 
         return False
 
-    return True
+    except Exception as error:
+        print("DISCORD EXCEPTION:", error)
+
+        return False
 
 
-# ==========================================
-# MAIN
-# ==========================================
+# ==============================
+# CHECK RSS FEEDS
+# ==============================
 
-def main():
+def check_news():
 
-    print("Checking X for USD and Forex news...")
+    print("Checking free Forex RSS feeds...")
 
-    sent_posts = load_sent_posts()
+    sent_news = load_sent_news()
 
-    posts = get_x_posts()
+    new_sent_news = sent_news.copy()
 
-    print(f"Posts found: {len(posts)}")
+    total_found = 0
+    total_matched = 0
+    total_sent = 0
 
-    new_posts = []
+    for feed_url in RSS_FEEDS:
 
-    for post in posts:
+        print(f"\nChecking: {feed_url}")
 
-        post_id = post["id"]
+        try:
+            feed = feedparser.parse(feed_url)
 
-        if post_id in sent_posts:
-            continue
+            if feed.bozo:
+                print(
+                    "WARNING: RSS feed may have an error."
+                )
 
-        text = post["text"]
-
-        if not is_high_impact(text):
-            continue
-
-        new_posts.append(post)
-
-    # Send oldest first
-    new_posts.reverse()
-
-    print(
-        f"New high impact posts: "
-        f"{len(new_posts)}"
-    )
-
-    for post in new_posts:
-
-        print(
-            f"Sending: "
-            f"{post['username']}"
-        )
-
-        success = send_to_discord(post)
-
-        if success:
-
-            sent_posts.append(
-                post["id"]
+            source = feed.feed.get(
+                "title",
+                "Forex News"
             )
 
-    save_sent_posts(sent_posts)
+            print(
+                f"Feed source: {source}"
+            )
 
-    print("Finished.")
+            print(
+                f"Posts found: {len(feed.entries)}"
+            )
+
+            for entry in feed.entries[:20]:
+
+                total_found += 1
+
+                title = entry.get(
+                    "title",
+                    ""
+                ).strip()
+
+                link = entry.get(
+                    "link",
+                    ""
+                ).strip()
+
+                summary = entry.get(
+                    "summary",
+                    entry.get("description", "")
+                )
+
+                if not title or not link:
+                    continue
+
+                news_id = create_news_id(
+                    title,
+                    link
+                )
+
+                # Skip already sent news
+                if news_id in sent_news:
+                    continue
+
+                matched, urgent = is_high_impact(
+                    title,
+                    summary
+                )
+
+                if not matched:
+                    continue
+
+                total_matched += 1
+
+                print(
+                    f"MATCHED: {title}"
+                )
+
+                success = send_to_discord(
+                    title,
+                    summary,
+                    link,
+                    source,
+                    urgent
+                )
+
+                if success:
+                    new_sent_news.append(
+                        news_id
+                    )
+
+                    total_sent += 1
+
+        except Exception as error:
+
+            print(
+                f"RSS ERROR for {feed_url}:",
+                error
+            )
+
+    save_sent_news(
+        new_sent_news
+    )
+
+    print("\n==============================")
+    print("FOREX NEWS BOT FINISHED")
+    print("==============================")
+    print(f"Total posts checked: {total_found}")
+    print(f"High-impact matches: {total_matched}")
+    print(f"Discord messages sent: {total_sent}")
 
 
-# ==========================================
-# RUN
-# ==========================================
+# ==============================
+# RUN BOT
+# ==============================
 
 if __name__ == "__main__":
-    main()
+    check_news()

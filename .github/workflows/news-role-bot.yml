@@ -1,5 +1,31 @@
-- name: Run Discord Bot
-  env:
-    DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-  run: |
-    python role_button.py
+name: Discord Role Button Bot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-discord-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install discord.py
+
+      - name: Run Discord Bot
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: |
+          python role_button.py

@@ -8,83 +8,156 @@ import requests
 import feedparser
 
 
-# ==========================================
-# SETTINGS
-# ==========================================
+# ==================================================
+# CONFIGURATION
+# ==================================================
 
-DISCORD_WEBHOOK_URL = os.getenv("https://discord.com/api/webhooks/1540670407517151283/tTW18ucJttskrE68l-C8o_57zEyAYAzdrsbufv9V0YzuTss7EhpBCc-vTz-526ATtpFl")
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 SENT_EVENTS_FILE = "sent_events.json"
 
-# Professional market banner
-BANNER_URL = "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=1600&q=80"
+# Market banner shown in Discord
+BANNER_URL = (
+    "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3"
+    "?auto=format&fit=crop&w=1600&q=80"
+)
 
 
-# ==========================================
-# HIGH IMPACT USD KEYWORDS
-# ==========================================
+# ==================================================
+# RSS FEEDS
+# ==================================================
 
-USD_KEYWORDS = [
-    "usd",
-    "u.s. dollar",
-    "us dollar",
-    "dollar",
-    "united states",
-    "u.s.",
-    "us economy",
-    "u.s. economy",
-    "american economy",
-    "federal reserve",
-    "fed",
-    "fomc",
-    "jerome powell",
-    "powell"
+RSS_FEEDS = [
+    {
+        "name": "ForexLive",
+        "url": "https://www.forexlive.com/feed/"
+    },
+    {
+        "name": "InvestingLive",
+        "url": "https://investinglive.com/feed/"
+    },
+    {
+        "name": "Myfxbook Forex News",
+        "url": "https://www.myfxbook.com/rss/forex-news"
+    }
 ]
 
 
-HIGH_IMPACT_EVENTS = [
+# ==================================================
+# HIGH IMPACT USD / US MARKET EVENTS
+# ==================================================
+
+HIGH_IMPACT_KEYWORDS = [
+
+    # Federal Reserve
+    "federal reserve",
+    "fomc",
+    "jerome powell",
+    "powell",
+    "fed chair",
+    "fed officials",
+    "fed decision",
+
+    # Interest rates
     "interest rate",
     "rate decision",
     "rate hike",
     "rate cut",
-    "fomc",
-    "federal reserve",
+    "monetary policy",
+
+    # Inflation
     "cpi",
+    "consumer price index",
     "inflation",
     "core inflation",
+    "pce",
+    "core pce",
+    "ppi",
+    "producer price",
+
+    # Employment
     "nonfarm payroll",
+    "non-farm payroll",
     "nfp",
     "payrolls",
-    "unemployment",
     "jobs report",
     "employment report",
+    "unemployment",
+    "jobless claims",
+    "labor market",
+
+    # Major US economic data
     "gdp",
-    "pce",
     "retail sales",
+    "durable goods",
     "consumer confidence",
-    "producer prices",
-    "ppi",
+    "economic growth",
+    "recession",
+
+    # USD and bond markets
+    "us dollar",
+    "u.s. dollar",
+    "dollar index",
+    "dxy",
+    "treasury yields",
     "treasury yield",
     "bond yields",
-    "labor market",
-    "recession",
-    "economic data"
+
+    # Major market events
+    "market intervention",
+    "currency intervention",
+    "emergency",
+    "government shutdown",
+    "tariffs",
+    "trade war",
 ]
 
 
-# ==========================================
-# RSS NEWS FEEDS
-# ==========================================
+# ==================================================
+# USD / US CONTEXT KEYWORDS
+# ==================================================
 
-RSS_FEEDS = [
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://feeds.reuters.com/reuters/marketsNews"
+USD_CONTEXT_KEYWORDS = [
+
+    "usd",
+    "dollar",
+    "u.s.",
+    "us ",
+    "united states",
+    "america",
+    "american",
+
+    "federal reserve",
+    "fomc",
+    "powell",
+    "fed",
+
+    "treasury",
+    "washington"
 ]
 
 
-# ==========================================
-# LOAD SENT NEWS
-# ==========================================
+# ==================================================
+# VERY IMPORTANT / BREAKING KEYWORDS
+# ==================================================
+
+BREAKING_KEYWORDS = [
+
+    "breaking",
+    "urgent",
+    "unexpected",
+    "surprise",
+    "shocks",
+    "emergency",
+    "intervention",
+    "major",
+    "crisis"
+]
+
+
+# ==================================================
+# LOAD SENT EVENTS
+# ==================================================
 
 def load_sent_events():
 
@@ -92,7 +165,6 @@ def load_sent_events():
         return set()
 
     try:
-
         with open(
             SENT_EVENTS_FILE,
             "r",
@@ -101,43 +173,40 @@ def load_sent_events():
 
             data = json.load(file)
 
-            return set(data)
+            if isinstance(data, list):
+                return set(data)
 
     except Exception as error:
+        print("Load error:", error)
 
-        print("Could not load sent events:", error)
-
-        return set()
+    return set()
 
 
-# ==========================================
-# SAVE SENT NEWS
-# ==========================================
+# ==================================================
+# SAVE SENT EVENTS
+# ==================================================
 
 def save_sent_events(events):
 
-    try:
+    # Keep only latest 1000 events
+    events = list(events)[-1000:]
 
-        with open(
-            SENT_EVENTS_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
+    with open(
+        SENT_EVENTS_FILE,
+        "w",
+        encoding="utf-8"
+    ) as file:
 
-            json.dump(
-                list(events),
-                file,
-                indent=2
-            )
-
-    except Exception as error:
-
-        print("Could not save sent events:", error)
+        json.dump(
+            events,
+            file,
+            indent=2
+        )
 
 
-# ==========================================
-# CLEAN HTML TEXT
-# ==========================================
+# ==================================================
+# CLEAN RSS HTML
+# ==================================================
 
 def clean_text(text):
 
@@ -146,7 +215,7 @@ def clean_text(text):
 
     text = re.sub(
         r"<[^>]+>",
-        "",
+        " ",
         text
     )
 
@@ -159,18 +228,105 @@ def clean_text(text):
     return text.strip()
 
 
-# ==========================================
-# GET MAIN NEWS POINTS
-# ==========================================
+# ==================================================
+# FIND KEYWORD MATCHES
+# ==================================================
 
-def get_main_points(summary, title):
+def find_matches(text, keywords):
+
+    text = text.lower()
+
+    matches = []
+
+    for keyword in keywords:
+
+        if keyword.lower() in text:
+            matches.append(keyword)
+
+    return matches
+
+
+# ==================================================
+# CHECK HIGH IMPACT USD NEWS
+# ==================================================
+
+def is_high_impact_usd_news(title, summary):
+
+    text = f"{title} {summary}".lower()
+
+    impact_matches = find_matches(
+        text,
+        HIGH_IMPACT_KEYWORDS
+    )
+
+    usd_matches = find_matches(
+        text,
+        USD_CONTEXT_KEYWORDS
+    )
+
+    breaking_matches = find_matches(
+        text,
+        BREAKING_KEYWORDS
+    )
+
+    # Must have at least one major economic event
+    if len(impact_matches) == 0:
+        return False, [], []
+
+    # If Fed/FOMC/Powell/Treasury is mentioned,
+    # automatically relevant to USD
+    direct_usd_events = [
+        "federal reserve",
+        "fomc",
+        "jerome powell",
+        "powell",
+        "fed chair",
+        "fed officials",
+        "fed decision",
+        "interest rate",
+        "rate decision",
+        "treasury yields",
+        "treasury yield"
+    ]
+
+    direct_match = any(
+        event in text
+        for event in direct_usd_events
+    )
+
+    # Otherwise require USD/US context
+    if not direct_match and len(usd_matches) == 0:
+        return False, [], []
+
+    # Strong market-moving news:
+    # 2+ high impact keywords
+    # OR 1 major keyword + breaking signal
+    high_impact = (
+        len(impact_matches) >= 2
+        or (
+            len(impact_matches) >= 1
+            and len(breaking_matches) >= 1
+        )
+        or direct_match
+    )
+
+    if not high_impact:
+        return False, [], []
+
+    return True, impact_matches, breaking_matches
+
+
+# ==================================================
+# CREATE SHORT KEY POINTS
+# ==================================================
+
+def get_key_points(title, summary):
 
     text = clean_text(summary)
 
     if not text:
         text = title
 
-    # Split into sentences
     sentences = re.split(
         r"(?<=[.!?])\s+",
         text
@@ -182,138 +338,91 @@ def get_main_points(summary, title):
 
         sentence = sentence.strip()
 
-        if len(sentence) < 20:
+        if len(sentence) < 30:
             continue
 
-        # Keep only first 3 important points
+        # Avoid extremely long points
+        if len(sentence) > 220:
+            sentence = sentence[:217] + "..."
+
         points.append(sentence)
 
-        if len(points) >= 3:
+        if len(points) == 3:
             break
 
+    # Always show something
     if not points:
+        points = [title]
 
-        points.append(title)
-
-    # Discord bullet points
     result = ""
 
     for point in points:
-
-        # Prevent extremely long Discord messages
-        if len(point) > 250:
-            point = point[:247] + "..."
-
         result += f"• {point}\n"
 
-    return result
+    return result.strip()
 
 
-# ==========================================
-# CHECK IF USD RELATED
-# ==========================================
-
-def is_usd_related(text):
-
-    text = text.lower()
-
-    matches = 0
-
-    for keyword in USD_KEYWORDS:
-
-        if keyword in text:
-
-            matches += 1
-
-    return matches >= 1
-
-
-# ==========================================
-# CHECK HIGH MARKET IMPACT
-# ==========================================
-
-def is_high_impact(text):
-
-    text = text.lower()
-
-    matches = 0
-
-    for keyword in HIGH_IMPACT_EVENTS:
-
-        if keyword in text:
-
-            matches += 1
-
-    return matches >= 1
-
-
-# ==========================================
-# FINAL NEWS FILTER
-# ==========================================
-
-def is_high_impact_usd_news(title, summary):
-
-    full_text = f"{title} {summary}".lower()
-
-    # Must be USD / US related
-    usd_related = is_usd_related(full_text)
-
-    # Must contain high-impact economic event
-    high_impact = is_high_impact(full_text)
-
-    return usd_related and high_impact
-
-
-# ==========================================
-# SEND ATTRACTIVE DISCORD ALERT
-# ==========================================
+# ==================================================
+# SEND PROFESSIONAL DISCORD ALERT
+# ==================================================
 
 def send_to_discord(
     title,
     summary,
     link,
-    source
+    source,
+    impact_matches
 ):
 
     if not DISCORD_WEBHOOK_URL:
 
         print(
-            "ERROR: DISCORD_WEBHOOK_URL secret is missing."
+            "ERROR: DISCORD_WEBHOOK_URL missing."
         )
 
         return False
 
 
-    main_points = get_main_points(
-        summary,
-        title
+    key_points = get_key_points(
+        title,
+        summary
     )
 
 
+    # Keep only first 3 matched event types
+    event_text = ", ".join(
+        impact_matches[:3]
+    )
+
+    if not event_text:
+        event_text = "Major USD Market Event"
+
+
     description = (
-        "## 🚨 BREAKING MARKET NEWS\n\n"
+        "## 🚨 BREAKING USD MARKET NEWS\n\n"
 
-        f"**{title}**\n\n"
+        f"### {title}\n\n"
 
-        "### 📝 Main Points\n"
-        f"{main_points}\n"
+        "### 📝 KEY POINTS\n"
+        f"{key_points}\n\n"
 
-        "### 📊 Market Impact\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+
+        "### 📊 MARKET IMPACT\n"
         "💵 **Currency:** USD\n"
-        "🔥 **Impact Level:** HIGH\n"
-        "📈 **Markets to Watch:** USD, Forex, Gold, Indices\n\n"
+        "🔥 **Impact:** HIGH\n"
+        f"📌 **Event:** {event_text}\n\n"
 
-        f"🔗 **[Read Full News]({link})**"
+        "👀 **Markets to Watch:**\n"
+        "USD • Gold • Major Forex Pairs • US Indices\n\n"
+
+        f"🔗 [Read Full News]({link})"
     )
 
 
     payload = {
 
-        "username": "USD Market Alerts",
-
-        "avatar_url": (
-            "https://cdn-icons-png.flaticon.com/512/3135/3135706.png"
-        ),
+        "username": "USD Breaking News",
 
         "embeds": [
 
@@ -326,25 +435,19 @@ def send_to_discord(
                 "color": 15158332,
 
                 "image": {
-
                     "url": BANNER_URL
-
                 },
 
                 "footer": {
-
                     "text": (
                         f"Source: {source} • "
-                        "Automated USD Market Monitor"
+                        "USD High Impact Monitor"
                     )
-
                 },
 
-                "timestamp": (
-                    datetime.now(
-                        timezone.utc
-                    ).isoformat()
-                )
+                "timestamp": datetime.now(
+                    timezone.utc
+                ).isoformat()
 
             }
 
@@ -356,27 +459,23 @@ def send_to_discord(
     try:
 
         response = requests.post(
-
             DISCORD_WEBHOOK_URL,
-
             json=payload,
-
             timeout=20
-
         )
 
 
         if response.status_code in [200, 204]:
 
             print(
-                "Successfully sent attractive Discord alert."
+                "SUCCESS: Alert sent to Discord."
             )
 
             return True
 
 
         print(
-            "Discord error:",
+            "DISCORD ERROR:",
             response.status_code
         )
 
@@ -390,39 +489,52 @@ def send_to_discord(
     except Exception as error:
 
         print(
-            "Discord request failed:",
+            "DISCORD EXCEPTION:",
             error
         )
 
         return False
 
 
-# ==========================================
-# MAIN BOT
-# ==========================================
+# ==================================================
+# MAIN NEWS CHECK
+# ==================================================
 
 def main():
 
     print(
-        "Checking HIGH IMPACT USD market news..."
+        "========================================"
+    )
+
+    print(
+        "CHECKING HIGH IMPACT USD NEWS"
+    )
+
+    print(
+        "========================================"
     )
 
 
     sent_events = load_sent_events()
 
 
-    posts_found = 0
+    total_entries = 0
 
-    usd_news_found = 0
+    matched_news = 0
 
     alerts_sent = 0
 
 
-    for feed_url in RSS_FEEDS:
+    for feed_info in RSS_FEEDS:
+
+
+        source = feed_info["name"]
+
+        feed_url = feed_info["url"]
 
 
         print(
-            f"\nChecking feed: {feed_url}"
+            f"\nChecking {source}..."
         )
 
 
@@ -435,54 +547,44 @@ def main():
 
 
             print(
-                f"News entries found: "
+                f"Entries found: "
                 f"{len(feed.entries)}"
             )
 
 
-            # Check latest 30 news items
-            for entry in feed.entries[:30]:
+            for entry in feed.entries[:40]:
 
 
-                posts_found += 1
+                total_entries += 1
 
 
-                title = entry.get(
-                    "title",
-                    ""
+                title = clean_text(
+                    entry.get("title", "")
                 )
 
 
-                summary = entry.get(
-                    "summary",
-                    ""
+                summary = clean_text(
+                    entry.get(
+                        "summary",
+                        entry.get(
+                            "description",
+                            ""
+                        )
+                    )
                 )
 
 
                 link = entry.get(
                     "link",
                     ""
-                )
+                ).strip()
 
 
                 if not title or not link:
-
                     continue
 
 
-                # Check only USD + high impact
-                if not is_high_impact_usd_news(
-                    title,
-                    summary
-                ):
-
-                    continue
-
-
-                usd_news_found += 1
-
-
-                # Create unique ID
+                # Unique ID based on link
                 event_id = hashlib.sha256(
 
                     link.encode(
@@ -492,40 +594,39 @@ def main():
                 ).hexdigest()
 
 
-                # Prevent duplicate news
+                # Already sent
                 if event_id in sent_events:
-
-
-                    print(
-                        "Already sent:",
-                        title
-                    )
-
-
                     continue
 
 
-                print(
-                    "\n================================="
+                matched, impact_matches, breaking_matches = (
+                    is_high_impact_usd_news(
+                        title,
+                        summary
+                    )
                 )
 
 
-                print(
-                    "HIGH IMPACT USD NEWS FOUND"
-                )
+                if not matched:
+                    continue
+
+
+                matched_news += 1
 
 
                 print(
-                    title
+                    "\n🚨 HIGH IMPACT USD NEWS FOUND"
                 )
-
 
                 print(
-                    "================================="
+                    f"Title: {title}"
+                )
+
+                print(
+                    f"Impact keywords: {impact_matches}"
                 )
 
 
-                # Send to Discord
                 success = send_to_discord(
 
                     title=title,
@@ -534,18 +635,18 @@ def main():
 
                     link=link,
 
-                    source="Reuters"
+                    source=source,
+
+                    impact_matches=impact_matches
 
                 )
 
 
                 if success:
 
-
                     sent_events.add(
                         event_id
                     )
-
 
                     alerts_sent += 1
 
@@ -554,54 +655,47 @@ def main():
 
 
             print(
-                "Feed error:",
+                f"ERROR checking {source}:",
                 error
             )
 
 
-    # Save already sent news
     save_sent_events(
         sent_events
     )
 
 
     print(
-        "\n================================="
+        "\n========================================"
     )
-
 
     print(
-        "BOT FINISHED"
+        "CHECK COMPLETE"
     )
-
 
     print(
-        "Posts checked:",
-        posts_found
+        "========================================"
     )
-
 
     print(
-        "High impact USD news found:",
-        usd_news_found
+        f"Total articles checked: "
+        f"{total_entries}"
     )
-
 
     print(
-        "New alerts sent:",
-        alerts_sent
+        f"High impact USD news found: "
+        f"{matched_news}"
     )
-
 
     print(
-        "================================="
+        f"Discord alerts sent: "
+        f"{alerts_sent}"
     )
 
 
-# ==========================================
-# RUN
-# ==========================================
+# ==================================================
+# START
+# ==================================================
 
 if __name__ == "__main__":
-
     main()

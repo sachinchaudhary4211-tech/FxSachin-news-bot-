@@ -1,1 +1,44 @@
+name: High Impact Forex News Bot
 
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  forex-news:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install packages
+        run: |
+          pip install requests pillow
+
+      - name: Run High Impact Forex News Bot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python forex_news.py
+
+      - name: Save sent news
+        run: |
+          git config user.name "Forex News Bot"
+          git config user.email "bot@github.com"
+
+          git add sent_events.json
+
+          git diff --cached --quiet || git commit -m "Update sent high impact news"
+
+          git push

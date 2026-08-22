@@ -1,9 +1,10 @@
 name: Forex News Bot
 
 on:
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
+
+  schedule:
+    - cron: "*/5 * * * *"
 
 jobs:
   forex-news:
@@ -26,7 +27,8 @@ jobs:
           pip install requests pillow
 
       - name: Run Forex News Bot
-        run: python forex_news.py
+        run: |
+          python forex_news.py
 
       - name: Save sent news
         run: |

@@ -23,7 +23,7 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install -r requirements.txt
+          pip install requests Pillow
 
       - name: Run Low Impact Forex News Bot
         env:

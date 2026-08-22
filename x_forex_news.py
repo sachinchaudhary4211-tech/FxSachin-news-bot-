@@ -1,195 +1,394 @@
 import os
 import json
 import hashlib
-import re
+import requests
+
+from PIL import Image, ImageDraw, ImageFont
+from io import BytesIO
 from datetime import datetime, timezone
 
-import requests
-import feedparser
 
+# ==========================================
+# SETTINGS
+# ==========================================
 
-# ==================================================
-# CONFIGURATION
-# ==================================================
+# Discord webhook from GitHub Secret
+WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-DISCORD_WEBHOOK_URL = os.getenv("https://discord.com/api/webhooks/1540670407517151283/tTW18ucJttskrE68l-C8o_57zEyAYAzdrsbufv9V0YzuTss7EhpBCc-vTz-526ATtpFl")
+# Discord role ID
+ROLE_ID = "1540675428572987452"
 
-SENT_EVENTS_FILE = "sent_events.json"
-
-# Market banner shown in Discord
-BANNER_URL = (
-    "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3"
-    "?auto=format&fit=crop&w=1600&q=80"
+# Forex Factory economic calendar feed
+CALENDAR_URL = (
+    "https://nfs.faireconomy.media/"
+    "ff_calendar_thisweek.json"
 )
 
+# File used to prevent duplicate alerts
+SENT_EVENTS_FILE = "sent_events.json"
 
-# ==================================================
-# RSS FEEDS
-# ==================================================
-
-RSS_FEEDS = [
-    {
-        "name": "ForexLive",
-        "url": "https://www.forexlive.com/feed/"
-    },
-    {
-        "name": "InvestingLive",
-        "url": "https://investinglive.com/feed/"
-    },
-    {
-        "name": "Myfxbook Forex News",
-        "url": "https://www.myfxbook.com/rss/forex-news"
-    }
-]
+# Alert before the event
+ALERT_WINDOW_MINUTES = 30
 
 
-# ==================================================
-# HIGH IMPACT USD / US MARKET EVENTS
-# ==================================================
+# ==========================================
+# FONT FUNCTION
+# ==========================================
 
-HIGH_IMPACT_KEYWORDS = [
+def get_font(size, bold=False):
 
-    # Federal Reserve
-    "federal reserve",
-    "fomc",
-    "jerome powell",
-    "powell",
-    "fed chair",
-    "fed officials",
-    "fed decision",
+    if bold:
+        path = (
+            "/usr/share/fonts/truetype/"
+            "dejavu/DejaVuSans-Bold.ttf"
+        )
+    else:
+        path = (
+            "/usr/share/fonts/truetype/"
+            "dejavu/DejaVuSans.ttf"
+        )
 
-    # Interest rates
-    "interest rate",
-    "rate decision",
-    "rate hike",
-    "rate cut",
-    "monetary policy",
-
-    # Inflation
-    "cpi",
-    "consumer price index",
-    "inflation",
-    "core inflation",
-    "pce",
-    "core pce",
-    "ppi",
-    "producer price",
-
-    # Employment
-    "nonfarm payroll",
-    "non-farm payroll",
-    "nfp",
-    "payrolls",
-    "jobs report",
-    "employment report",
-    "unemployment",
-    "jobless claims",
-    "labor market",
-
-    # Major US economic data
-    "gdp",
-    "retail sales",
-    "durable goods",
-    "consumer confidence",
-    "economic growth",
-    "recession",
-
-    # USD and bond markets
-    "us dollar",
-    "u.s. dollar",
-    "dollar index",
-    "dxy",
-    "treasury yields",
-    "treasury yield",
-    "bond yields",
-
-    # Major market events
-    "market intervention",
-    "currency intervention",
-    "emergency",
-    "government shutdown",
-    "tariffs",
-    "trade war",
-]
+    return ImageFont.truetype(path, size)
 
 
-# ==================================================
-# USD / US CONTEXT KEYWORDS
-# ==================================================
+# ==========================================
+# CREATE FOREX NEWS IMAGE
+# ==========================================
 
-USD_CONTEXT_KEYWORDS = [
+def create_news_image(
+    country,
+    event,
+    time_value,
+    forecast,
+    previous,
+    impact
+):
 
-    "usd",
-    "dollar",
-    "u.s.",
-    "us ",
-    "united states",
-    "america",
-    "american",
+    WIDTH = 1400
+    HEIGHT = 900
 
-    "federal reserve",
-    "fomc",
-    "powell",
-    "fed",
+    image = Image.new(
+        "RGB",
+        (WIDTH, HEIGHT),
+        "#0b1019"
+    )
 
-    "treasury",
-    "washington"
-]
+    draw = ImageDraw.Draw(image)
+
+    WHITE = "#f2f4f8"
+    GRAY = "#9da7b8"
+    RED = "#ff3131"
+    BLUE = "#3d8cff"
+    GREEN = "#55c74d"
+    ORANGE = "#ffb020"
+    DARK = "#111927"
+    BORDER = "#2a3445"
+
+    # Header
+    draw.rectangle(
+        [(0, 0), (WIDTH, 280)],
+        fill="#07111f"
+    )
+
+    for x in range(0, WIDTH, 60):
+
+        draw.line(
+            [(x, 0), (x + 100, 280)],
+            fill="#101b2b",
+            width=1
+        )
+
+    # Red section
+    draw.rectangle(
+        [(1050, 0), (WIDTH, 280)],
+        fill="#21080d"
+    )
+
+    # Candlestick decoration
+    candle_x = 1080
+
+    candle_heights = [
+        70,
+        120,
+        50,
+        150,
+        90,
+        180
+    ]
+
+    for i, height in enumerate(candle_heights):
+
+        x = candle_x + (i * 50)
+        y = 230 - height
+
+        draw.line(
+            [
+                (x + 12, y - 20),
+                (x + 12, y + height + 20)
+            ],
+            fill=RED,
+            width=3
+        )
+
+        draw.rectangle(
+            [
+                (x, y),
+                (x + 24, y + height)
+            ],
+            fill=RED
+        )
+
+    # Logo
+    draw.text(
+        (590, 50),
+        "FXSACHIN",
+        font=get_font(38, True),
+        fill=WHITE
+    )
+
+    draw.text(
+        (390, 100),
+        "FOREX",
+        font=get_font(100, True),
+        fill=WHITE
+    )
+
+    draw.text(
+        (750, 100),
+        "NEWS",
+        font=get_font(100, True),
+        fill=RED
+    )
+
+    draw.text(
+        (470, 220),
+        "STAY AHEAD. TRADE SMART.",
+        font=get_font(28),
+        fill=GRAY
+    )
+
+    # Main card
+    card_top = 300
+
+    draw.rounded_rectangle(
+        [
+            (40, card_top),
+            (1360, 850)
+        ],
+        radius=30,
+        fill=DARK,
+        outline=BORDER,
+        width=3
+    )
+
+    # Impact color
+    impact_lower = str(impact).lower()
+
+    if impact_lower == "high":
+        impact_color = RED
+
+    elif impact_lower == "medium":
+        impact_color = ORANGE
+
+    elif impact_lower == "low":
+        impact_color = GREEN
+
+    else:
+        impact_color = BLUE
+
+    # Impact header
+    draw.ellipse(
+        [
+            (80, 350),
+            (130, 400)
+        ],
+        fill=impact_color
+    )
+
+    draw.text(
+        (160, 350),
+        f"{str(impact).upper()} IMPACT",
+        font=get_font(45, True),
+        fill=WHITE
+    )
+
+    draw.text(
+        (650, 350),
+        "FOREX NEWS",
+        font=get_font(45, True),
+        fill=RED
+    )
+
+    current_date = datetime.now(
+        timezone.utc
+    ).strftime("%b %d, %Y")
+
+    draw.text(
+        (1070, 360),
+        current_date,
+        font=get_font(22),
+        fill=GRAY
+    )
+
+    # Country box
+    draw.rounded_rectangle(
+        [
+            (80, 440),
+            (1320, 550)
+        ],
+        radius=20,
+        fill="#0d1522",
+        outline=BORDER,
+        width=2
+    )
+
+    draw.text(
+        (130, 450),
+        str(country).upper(),
+        font=get_font(45, True),
+        fill=WHITE
+    )
+
+    draw.text(
+        (130, 510),
+        "COUNTRY / CURRENCY",
+        font=get_font(18),
+        fill=GRAY
+    )
+
+    # Event box
+    draw.rounded_rectangle(
+        [
+            (80, 580),
+            (1320, 690)
+        ],
+        radius=20,
+        fill="#0d1522",
+        outline=BORDER,
+        width=2
+    )
+
+    draw.text(
+        (130, 595),
+        "EVENT",
+        font=get_font(20, True),
+        fill=RED
+    )
+
+    event_text = str(event)
+
+    if len(event_text) > 45:
+        event_text = event_text[:42] + "..."
+
+    draw.text(
+        (130, 630),
+        event_text,
+        font=get_font(38, True),
+        fill=WHITE
+    )
+
+    # Bottom details
+    sections = [
+        ("TIME", time_value, "#9b8cff"),
+        ("FORECAST", forecast, GREEN),
+        ("PREVIOUS", previous, BLUE),
+        (
+            "IMPACT",
+            str(impact).upper(),
+            impact_color
+        )
+    ]
+
+    start_x = 100
+    box_width = 300
+
+    for i, section in enumerate(sections):
+
+        label = section[0]
+        value = section[1]
+        color = section[2]
+
+        x = start_x + (i * box_width)
+
+        if i > 0:
+
+            draw.line(
+                [
+                    (x - 30, 720),
+                    (x - 30, 820)
+                ],
+                fill=BORDER,
+                width=2
+            )
+
+        draw.text(
+            (x, 720),
+            label,
+            font=get_font(22, True),
+            fill=color
+        )
+
+        value_color = WHITE
+
+        if label == "IMPACT":
+            value_color = impact_color
+
+        draw.text(
+            (x, 760),
+            str(value),
+            font=get_font(38, True),
+            fill=value_color
+        )
+
+    # Footer
+    draw.text(
+        (540, 830),
+        "FxSachin • Forex News",
+        font=get_font(20),
+        fill=GRAY
+    )
+
+    image_bytes = BytesIO()
+
+    image.save(
+        image_bytes,
+        format="PNG"
+    )
+
+    image_bytes.seek(0)
+
+    return image_bytes
 
 
-# ==================================================
-# VERY IMPORTANT / BREAKING KEYWORDS
-# ==================================================
-
-BREAKING_KEYWORDS = [
-
-    "breaking",
-    "urgent",
-    "unexpected",
-    "surprise",
-    "shocks",
-    "emergency",
-    "intervention",
-    "major",
-    "crisis"
-]
-
-
-# ==================================================
+# ==========================================
 # LOAD SENT EVENTS
-# ==================================================
+# ==========================================
 
 def load_sent_events():
 
     if not os.path.exists(SENT_EVENTS_FILE):
-        return set()
+        return []
 
     try:
+
         with open(
             SENT_EVENTS_FILE,
             "r",
             encoding="utf-8"
         ) as file:
 
-            data = json.load(file)
+            return json.load(file)
 
-            if isinstance(data, list):
-                return set(data)
+    except Exception:
 
-    except Exception as error:
-        print("Load error:", error)
-
-    return set()
+        return []
 
 
-# ==================================================
+# ==========================================
 # SAVE SENT EVENTS
-# ==================================================
+# ==========================================
 
 def save_sent_events(events):
-
-    # Keep only latest 1000 events
-    events = list(events)[-1000:]
 
     with open(
         SENT_EVENTS_FILE,
@@ -200,181 +399,142 @@ def save_sent_events(events):
         json.dump(
             events,
             file,
-            indent=2
+            indent=4
         )
 
 
-# ==================================================
-# CLEAN RSS HTML
-# ==================================================
+# ==========================================
+# CREATE UNIQUE EVENT ID
+# ==========================================
 
-def clean_text(text):
+def create_event_id(event):
 
-    if not text:
-        return ""
-
-    text = re.sub(
-        r"<[^>]+>",
-        " ",
-        text
+    event_data = (
+        f"{event.get('date', '')}|"
+        f"{event.get('country', '')}|"
+        f"{event.get('title', '')}|"
+        f"{event.get('impact', '')}"
     )
 
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    )
-
-    return text.strip()
+    return hashlib.md5(
+        event_data.encode("utf-8")
+    ).hexdigest()
 
 
-# ==================================================
-# FIND KEYWORD MATCHES
-# ==================================================
+# ==========================================
+# GET FOREX NEWS
+# ==========================================
 
-def find_matches(text, keywords):
+def get_forex_news():
 
-    text = text.lower()
+    headers = {
+        "User-Agent": "Mozilla/5.0 FxSachinNewsBot/1.0"
+    }
 
-    matches = []
+    try:
 
-    for keyword in keywords:
-
-        if keyword.lower() in text:
-            matches.append(keyword)
-
-    return matches
-
-
-# ==================================================
-# CHECK HIGH IMPACT USD NEWS
-# ==================================================
-
-def is_high_impact_usd_news(title, summary):
-
-    text = f"{title} {summary}".lower()
-
-    impact_matches = find_matches(
-        text,
-        HIGH_IMPACT_KEYWORDS
-    )
-
-    usd_matches = find_matches(
-        text,
-        USD_CONTEXT_KEYWORDS
-    )
-
-    breaking_matches = find_matches(
-        text,
-        BREAKING_KEYWORDS
-    )
-
-    # Must have at least one major economic event
-    if len(impact_matches) == 0:
-        return False, [], []
-
-    # If Fed/FOMC/Powell/Treasury is mentioned,
-    # automatically relevant to USD
-    direct_usd_events = [
-        "federal reserve",
-        "fomc",
-        "jerome powell",
-        "powell",
-        "fed chair",
-        "fed officials",
-        "fed decision",
-        "interest rate",
-        "rate decision",
-        "treasury yields",
-        "treasury yield"
-    ]
-
-    direct_match = any(
-        event in text
-        for event in direct_usd_events
-    )
-
-    # Otherwise require USD/US context
-    if not direct_match and len(usd_matches) == 0:
-        return False, [], []
-
-    # Strong market-moving news:
-    # 2+ high impact keywords
-    # OR 1 major keyword + breaking signal
-    high_impact = (
-        len(impact_matches) >= 2
-        or (
-            len(impact_matches) >= 1
-            and len(breaking_matches) >= 1
+        response = requests.get(
+            CALENDAR_URL,
+            headers=headers,
+            timeout=30
         )
-        or direct_match
-    )
 
-    if not high_impact:
-        return False, [], []
+        response.raise_for_status()
 
-    return True, impact_matches, breaking_matches
+        return response.json()
 
+    except requests.exceptions.RequestException as error:
 
-# ==================================================
-# CREATE SHORT KEY POINTS
-# ==================================================
+        print(
+            f"Calendar request error: {error}"
+        )
 
-def get_key_points(title, summary):
-
-    text = clean_text(summary)
-
-    if not text:
-        text = title
-
-    sentences = re.split(
-        r"(?<=[.!?])\s+",
-        text
-    )
-
-    points = []
-
-    for sentence in sentences:
-
-        sentence = sentence.strip()
-
-        if len(sentence) < 30:
-            continue
-
-        # Avoid extremely long points
-        if len(sentence) > 220:
-            sentence = sentence[:217] + "..."
-
-        points.append(sentence)
-
-        if len(points) == 3:
-            break
-
-    # Always show something
-    if not points:
-        points = [title]
-
-    result = ""
-
-    for point in points:
-        result += f"• {point}\n"
-
-    return result.strip()
+        return []
 
 
-# ==================================================
-# SEND PROFESSIONAL DISCORD ALERT
-# ==================================================
+# ==========================================
+# FORMAT EVENT TIME
+# ==========================================
+
+def format_event_time(date_value):
+
+    if not date_value:
+        return "TBA"
+
+    try:
+
+        event_date = datetime.fromisoformat(
+            str(date_value).replace(
+                "Z",
+                "+00:00"
+            )
+        )
+
+        return event_date.strftime(
+            "%I:%M %p UTC"
+        )
+
+    except Exception:
+
+        return str(date_value)
+
+
+# ==========================================
+# CHECK ALERT WINDOW
+# ==========================================
+
+def is_event_within_alert_window(date_value):
+
+    if not date_value:
+        return False
+
+    try:
+
+        event_date = datetime.fromisoformat(
+            str(date_value).replace(
+                "Z",
+                "+00:00"
+            )
+        )
+
+        if event_date.tzinfo is None:
+
+            event_date = event_date.replace(
+                tzinfo=timezone.utc
+            )
+
+        now = datetime.now(
+            timezone.utc
+        )
+
+        minutes_until = (
+            event_date - now
+        ).total_seconds() / 60
+
+        return (
+            0 <= minutes_until
+            <= ALERT_WINDOW_MINUTES
+        )
+
+    except Exception:
+
+        return False
+
+
+# ==========================================
+# SEND TO DISCORD
+# ==========================================
 
 def send_to_discord(
-    title,
-    summary,
-    link,
-    source,
-    impact_matches
+    country,
+    event,
+    time_value,
+    forecast,
+    previous,
+    impact
 ):
 
-    if not DISCORD_WEBHOOK_URL:
+    if not WEBHOOK_URL:
 
         print(
             "ERROR: DISCORD_WEBHOOK_URL missing."
@@ -382,320 +542,213 @@ def send_to_discord(
 
         return False
 
-
-    key_points = get_key_points(
-        title,
-        summary
+    image_bytes = create_news_image(
+        country,
+        event,
+        time_value,
+        forecast,
+        previous,
+        impact
     )
 
-
-    # Keep only first 3 matched event types
-    event_text = ", ".join(
-        impact_matches[:3]
-    )
-
-    if not event_text:
-        event_text = "Major USD Market Event"
-
-
-    description = (
-        "## 🚨 BREAKING USD MARKET NEWS\n\n"
-
-        f"### {title}\n\n"
-
-        "### 📝 KEY POINTS\n"
-        f"{key_points}\n\n"
-
-        "━━━━━━━━━━━━━━━━━━\n"
-
-        "### 📊 MARKET IMPACT\n"
-        "💵 **Currency:** USD\n"
-        "🔥 **Impact:** HIGH\n"
-        f"📌 **Event:** {event_text}\n\n"
-
-        "👀 **Markets to Watch:**\n"
-        "USD • Gold • Major Forex Pairs • US Indices\n\n"
-
-        f"🔗 [Read Full News]({link})"
-    )
-
-
-    payload = {
-
-        "username": "USD Breaking News",
-
-        "embeds": [
-
-            {
-
-                "title": "🚨 HIGH IMPACT USD ALERT",
-
-                "description": description,
-
-                "color": 15158332,
-
-                "image": {
-                    "url": BANNER_URL
-                },
-
-                "footer": {
-                    "text": (
-                        f"Source: {source} • "
-                        "USD High Impact Monitor"
-                    )
-                },
-
-                "timestamp": datetime.now(
-                    timezone.utc
-                ).isoformat()
-
-            }
-
-        ]
-
+    files = {
+        "file": (
+            "forex_news.png",
+            image_bytes,
+            "image/png"
+        )
     }
 
+    data = {
+        "content": (
+            f"<@&{ROLE_ID}>\n\n"
+            "🚨 **HIGH IMPACT USD NEWS ALERT**\n\n"
+            f"🌍 **Country:** {country}\n"
+            f"📊 **Event:** {event}\n"
+            f"⏰ **Time:** {time_value}\n"
+            f"📈 **Forecast:** {forecast}\n"
+            f"📉 **Previous:** {previous}\n"
+            f"🔴 **Impact:** {impact}"
+        ),
+
+        "allowed_mentions": {
+            "roles": [ROLE_ID]
+        }
+    }
 
     try:
 
         response = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json=payload,
-            timeout=20
+            WEBHOOK_URL,
+            data=data,
+            files=files,
+            timeout=30
         )
-
 
         if response.status_code in [200, 204]:
 
             print(
-                "SUCCESS: Alert sent to Discord."
+                f"SUCCESS: Alert sent to Discord: {event}"
             )
 
             return True
 
-
         print(
-            "DISCORD ERROR:",
-            response.status_code
+            f"DISCORD ERROR: {response.status_code}"
         )
 
+        print(response.text)
+
+        return False
+
+    except requests.exceptions.RequestException as error:
+
         print(
-            response.text
+            f"DISCORD EXCEPTION: {error}"
         )
 
         return False
 
 
-    except Exception as error:
-
-        print(
-            "DISCORD EXCEPTION:",
-            error
-        )
-
-        return False
-
-
-# ==================================================
-# MAIN NEWS CHECK
-# ==================================================
+# ==========================================
+# MAIN BOT
+# ==========================================
 
 def main():
 
     print(
-        "========================================"
+        "Fetching Forex Factory calendar..."
     )
 
-    print(
-        "CHECKING HIGH IMPACT USD NEWS"
-    )
-
-    print(
-        "========================================"
-    )
-
-
-    sent_events = load_sent_events()
-
-
-    total_entries = 0
-
-    matched_news = 0
-
-    alerts_sent = 0
-
-
-    for feed_info in RSS_FEEDS:
-
-
-        source = feed_info["name"]
-
-        feed_url = feed_info["url"]
-
+    if not WEBHOOK_URL:
 
         print(
-            f"\nChecking {source}..."
+            "ERROR: DISCORD_WEBHOOK_URL missing."
+        )
+
+        return
+
+    print(
+        "SUCCESS: Discord webhook environment variable found."
+    )
+
+    events = get_forex_news()
+
+    if not events:
+
+        print(
+            "No calendar events found."
+        )
+
+        return
+
+    sent_events = load_sent_events()
+    sent_set = set(sent_events)
+
+    new_sent_events = []
+
+    for event in events:
+
+        impact = str(
+            event.get("impact", "")
+        ).strip()
+
+        country = str(
+            event.get("country", "")
+        ).upper()
+
+        title = str(
+            event.get("title", "")
+        ).strip()
+
+        date_value = event.get(
+            "date",
+            ""
+        )
+
+        # USD only
+        if country != "USD":
+            continue
+
+        # High impact only
+        if impact.lower() != "high":
+            continue
+
+        if not title:
+            continue
+
+        # Event must be within alert window
+        if not is_event_within_alert_window(
+            date_value
+        ):
+            continue
+
+        event_id = create_event_id(event)
+
+        # Skip already sent event
+        if event_id in sent_set:
+            continue
+
+        time_value = format_event_time(
+            date_value
+        )
+
+        forecast = (
+            event.get("forecast")
+            or "N/A"
+        )
+
+        previous = (
+            event.get("previous")
+            or "N/A"
+        )
+
+        success = send_to_discord(
+            country=country,
+            event=title,
+            time_value=time_value,
+            forecast=forecast,
+            previous=previous,
+            impact=impact
+        )
+
+        if success:
+
+            new_sent_events.append(
+                event_id
+            )
+
+    # Save sent events
+    if new_sent_events:
+
+        sent_events.extend(
+            new_sent_events
+        )
+
+        sent_events = sent_events[-500:]
+
+        save_sent_events(
+            sent_events
+        )
+
+        print(
+            f"SUCCESS: Sent "
+            f"{len(new_sent_events)} "
+            f"new USD High Impact event(s)."
+        )
+
+    else:
+
+        print(
+            "No new USD High Impact events "
+            "to send."
         )
 
 
-        try:
-
-
-            feed = feedparser.parse(
-                feed_url
-            )
-
-
-            print(
-                f"Entries found: "
-                f"{len(feed.entries)}"
-            )
-
-
-            for entry in feed.entries[:40]:
-
-
-                total_entries += 1
-
-
-                title = clean_text(
-                    entry.get("title", "")
-                )
-
-
-                summary = clean_text(
-                    entry.get(
-                        "summary",
-                        entry.get(
-                            "description",
-                            ""
-                        )
-                    )
-                )
-
-
-                link = entry.get(
-                    "link",
-                    ""
-                ).strip()
-
-
-                if not title or not link:
-                    continue
-
-
-                # Unique ID based on link
-                event_id = hashlib.sha256(
-
-                    link.encode(
-                        "utf-8"
-                    )
-
-                ).hexdigest()
-
-
-                # Already sent
-                if event_id in sent_events:
-                    continue
-
-
-                matched, impact_matches, breaking_matches = (
-                    is_high_impact_usd_news(
-                        title,
-                        summary
-                    )
-                )
-
-
-                if not matched:
-                    continue
-
-
-                matched_news += 1
-
-
-                print(
-                    "\n🚨 HIGH IMPACT USD NEWS FOUND"
-                )
-
-                print(
-                    f"Title: {title}"
-                )
-
-                print(
-                    f"Impact keywords: {impact_matches}"
-                )
-
-
-                success = send_to_discord(
-
-                    title=title,
-
-                    summary=summary,
-
-                    link=link,
-
-                    source=source,
-
-                    impact_matches=impact_matches
-
-                )
-
-
-                if success:
-
-                    sent_events.add(
-                        event_id
-                    )
-
-                    alerts_sent += 1
-
-
-        except Exception as error:
-
-
-            print(
-                f"ERROR checking {source}:",
-                error
-            )
-
-
-    save_sent_events(
-        sent_events
-    )
-
-
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "CHECK COMPLETE"
-    )
-
-    print(
-        "========================================"
-    )
-
-    print(
-        f"Total articles checked: "
-        f"{total_entries}"
-    )
-
-    print(
-        f"High impact USD news found: "
-        f"{matched_news}"
-    )
-
-    print(
-        f"Discord alerts sent: "
-        f"{alerts_sent}"
-    )
-
-
-# ==================================================
-# START
-# ==================================================
+# ==========================================
+# RUN BOT
+# ==========================================
 
 if __name__ == "__main__":
+
     main()

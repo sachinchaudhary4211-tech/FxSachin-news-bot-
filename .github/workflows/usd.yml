@@ -1,8 +1,7 @@
-name: USD News Bot
+name: USD Forex News
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: "*/5 * * * *"
 
@@ -10,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  usd-news:
+  forex-news:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,21 +23,28 @@ jobs:
 
       - name: Install packages
         run: |
-          pip install requests pillow
+          pip install -r requirements.txt
 
-      - name: Run USD News Bot
+      - name: Run USD Forex News Bot
         env:
-          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
         run: |
-          python usd_news.py
+          python usd.py
 
       - name: Save sent USD events
         run: |
           git config user.name "Forex News Bot"
-          git config user.email "bot@github.com"
+          git config user.email "actions@github.com"
 
-          git add sent_usd_events.json
+          if [ -f sent_events.json ]; then
+            git add sent_events.json
 
-          git diff --cached --quiet || git commit -m "Update sent USD events"
-
-          git push
+            if git diff --cached --quiet; then
+              echo "No changes to commit."
+            else
+              git commit -m "Update sent USD events"
+              git push
+            fi
+          else
+            echo "sent_events.json was not created. Skipping save."
+          fi

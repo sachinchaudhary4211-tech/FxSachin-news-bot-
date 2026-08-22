@@ -3,24 +3,14 @@ import json
 import hashlib
 import requests
 import feedparser
-from datetime import datetime, timezone
-
-# ==============================
-# SETTINGS
-# ==============================
+from datetime import datetime
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-SENT_FILE = "sent_events.json"
+SENT_EVENTS_FILE = "sent_events.json"
 
-RSS_FEEDS = [
-    "https://www.forexlive.com/feed/",
-    "https://www.myfxbook.com/rss/forex-news",
-]
-
-# Important Forex / USD keywords
+# USD / US economy / Forex high-impact keywords
 HIGH_IMPACT_KEYWORDS = [
-    # USD / Federal Reserve
     "federal reserve",
     "fed ",
     "fomc",
@@ -28,173 +18,78 @@ HIGH_IMPACT_KEYWORDS = [
     "interest rate",
     "rate hike",
     "rate cut",
-    "us inflation",
     "cpi",
-    "core cpi",
-    "pce",
-    "nonfarm",
+    "inflation",
+    "nonfarm payroll",
     "nfp",
-    "payroll",
+    "payrolls",
     "unemployment",
     "jobs report",
     "gdp",
-
-    # USD / US economy
-    "us dollar",
-    "dollar index",
+    "pce",
+    "retail sales",
+    "consumer confidence",
     "usd",
+    "dollar",
+    "us economy",
+    "u.s. economy",
     "treasury",
-    "bond yield",
-
-    # Forex currencies
-    "eur",
-    "gbp",
-    "jpy",
-    "aud",
-    "cad",
-    "nzd",
-    "chf",
-
-    # Central banks
-    "ecb",
-    "bank of england",
-    "boe",
-    "bank of japan",
-    "boj",
-    "rba",
-    "bank of canada",
-    "boc",
-
-    # Major Forex market events
-    "currency intervention",
-    "forex market",
-    "fx market",
+    "yield",
+    "labor market",
+    "employment"
 ]
 
-# Words that make a news item more important
-URGENT_KEYWORDS = [
-    "breaking",
-    "emergency",
-    "unexpected",
-    "surprise",
-    "urgent",
-    "crisis",
-    "intervention",
-    "rate decision",
+# RSS news sources
+RSS_FEEDS = [
+    "https://feeds.reuters.com/reuters/businessNews",
+    "https://feeds.reuters.com/reuters/marketsNews",
 ]
 
+def load_sent_events():
+    if os.path.exists(SENT_EVENTS_FILE):
+        try:
+            with open(SENT_EVENTS_FILE, "r", encoding="utf-8") as file:
+                return set(json.load(file))
+        except Exception:
+            return set()
 
-# ==============================
-# LOAD SENT NEWS
-# ==============================
-
-def load_sent_news():
-    if not os.path.exists(SENT_FILE):
-        return []
-
-    try:
-        with open(SENT_FILE, "r", encoding="utf-8") as file:
-            data = json.load(file)
-
-            if isinstance(data, list):
-                return data
-
-            return []
-    except Exception:
-        return []
+    return set()
 
 
-# ==============================
-# SAVE SENT NEWS
-# ==============================
-
-def save_sent_news(sent_news):
-    # Keep only latest 500 IDs
-    sent_news = sent_news[-500:]
-
-    with open(SENT_FILE, "w", encoding="utf-8") as file:
-        json.dump(sent_news, file, indent=2)
+def save_sent_events(events):
+    with open(SENT_EVENTS_FILE, "w", encoding="utf-8") as file:
+        json.dump(list(events), file)
 
 
-# ==============================
-# CREATE NEWS ID
-# ==============================
-
-def create_news_id(title, link):
-    text = f"{title}|{link}"
-
-    return hashlib.sha256(
-        text.encode("utf-8")
-    ).hexdigest()
-
-
-# ==============================
-# CHECK IMPORTANT NEWS
-# ==============================
-
-def is_high_impact(title, summary):
+def is_high_impact_usd_news(title, summary):
     text = f"{title} {summary}".lower()
 
-    keyword_found = any(
-        keyword.lower() in text
-        for keyword in HIGH_IMPACT_KEYWORDS
-    )
+    matches = 0
 
-    urgent_found = any(
-        keyword.lower() in text
-        for keyword in URGENT_KEYWORDS
-    )
+    for keyword in HIGH_IMPACT_KEYWORDS:
+        if keyword in text:
+            matches += 1
 
-    return keyword_found, urgent_found
+    # Must have at least 2 relevant signals
+    return matches >= 2
 
 
-# ==============================
-# SEND TO DISCORD
-# ==============================
-
-def send_to_discord(title, summary, link, source, urgent=False):
-
+def send_to_discord(title, link, source):
     if not DISCORD_WEBHOOK_URL:
-        print("ERROR: DISCORD_WEBHOOK_URL is missing.")
+        print("ERROR: DISCORD_WEBHOOK_URL secret is missing.")
         return False
 
-    title_prefix = "🚨 HIGH IMPACT FOREX NEWS"
-
-    if urgent:
-        title_prefix = "🔥 BREAKING FOREX NEWS"
-
-    description = summary.strip()
-
-    if not description:
-        description = "Important Forex or USD market news detected."
-
-    # Discord embed descriptions have limits
-    description = description[:3500]
-
-    payload = {
-        "username": "Forex News Bot",
+    message = {
         "embeds": [
             {
-                "title": f"{title_prefix}\n\n{title}",
-                "description": description,
-                "url": link,
-                "fields": [
-                    {
-                        "name": "Source",
-                        "value": source,
-                        "inline": True
-                    },
-                    {
-                        "name": "Time",
-                        "value": datetime.now(
-                            timezone.utc
-                        ).strftime("%Y-%m-%d %H:%M UTC"),
-                        "inline": True
-                    }
-                ],
-                "footer": {
-                    "text": "USD & Forex Market News"
-                }
+                "title": "🚨 HIGH IMPACT USD / FOREX NEWS",
+                "description": (
+                    f"**{title}**\n\n"
+                    f"📈 Possible high impact on: **USD / Forex / Gold / Indices**\n"
+                    f"📰 Source: {source}\n"
+                    f"🔗 {link}"
+                ),
+                "timestamp": datetime.utcnow().isoformat() + "Z"
             }
         ]
     }
@@ -202,151 +97,80 @@ def send_to_discord(title, summary, link, source, urgent=False):
     try:
         response = requests.post(
             DISCORD_WEBHOOK_URL,
-            json=payload,
-            timeout=15
+            json=message,
+            timeout=20
         )
 
         if response.status_code in [200, 204]:
-            print("SUCCESS: Discord message sent.")
+            print("Sent to Discord successfully.")
             return True
 
-        print(
-            "DISCORD ERROR:",
-            response.status_code,
-            response.text
-        )
-
+        print("Discord error:", response.status_code)
+        print(response.text)
         return False
 
     except Exception as error:
-        print("DISCORD EXCEPTION:", error)
-
+        print("Discord request failed:", error)
         return False
 
 
-# ==============================
-# CHECK RSS FEEDS
-# ==============================
+def main():
+    print("Checking HIGH IMPACT USD and Forex news...")
 
-def check_news():
+    sent_events = load_sent_events()
 
-    print("Checking free Forex RSS feeds...")
-
-    sent_news = load_sent_news()
-
-    new_sent_news = sent_news.copy()
-
-    total_found = 0
-    total_matched = 0
-    total_sent = 0
+    posts_found = 0
+    high_impact_found = 0
+    newly_sent = 0
 
     for feed_url in RSS_FEEDS:
-
-        print(f"\nChecking: {feed_url}")
+        print(f"\nChecking feed: {feed_url}")
 
         try:
             feed = feedparser.parse(feed_url)
 
-            if feed.bozo:
-                print(
-                    "WARNING: RSS feed may have an error."
-                )
+            for entry in feed.entries[:30]:
+                posts_found += 1
 
-            source = feed.feed.get(
-                "title",
-                "Forex News"
-            )
-
-            print(
-                f"Feed source: {source}"
-            )
-
-            print(
-                f"Posts found: {len(feed.entries)}"
-            )
-
-            for entry in feed.entries[:20]:
-
-                total_found += 1
-
-                title = entry.get(
-                    "title",
-                    ""
-                ).strip()
-
-                link = entry.get(
-                    "link",
-                    ""
-                ).strip()
-
-                summary = entry.get(
-                    "summary",
-                    entry.get("description", "")
-                )
+                title = entry.get("title", "")
+                summary = entry.get("summary", "")
+                link = entry.get("link", "")
 
                 if not title or not link:
                     continue
 
-                news_id = create_news_id(
-                    title,
-                    link
-                )
-
-                # Skip already sent news
-                if news_id in sent_news:
+                if not is_high_impact_usd_news(title, summary):
                     continue
 
-                matched, urgent = is_high_impact(
-                    title,
-                    summary
-                )
+                high_impact_found += 1
 
-                if not matched:
+                event_id = hashlib.sha256(
+                    link.encode("utf-8")
+                ).hexdigest()
+
+                if event_id in sent_events:
+                    print("Already sent:", title)
                     continue
 
-                total_matched += 1
+                print("\nHIGH IMPACT USD NEWS FOUND:")
+                print(title)
 
-                print(
-                    f"MATCHED: {title}"
-                )
-
-                success = send_to_discord(
-                    title,
-                    summary,
-                    link,
-                    source,
-                    urgent
-                )
-
-                if success:
-                    new_sent_news.append(
-                        news_id
-                    )
-
-                    total_sent += 1
+                if send_to_discord(title, link, "Reuters"):
+                    sent_events.add(event_id)
+                    newly_sent += 1
 
         except Exception as error:
+            print("Feed error:", error)
 
-            print(
-                f"RSS ERROR for {feed_url}:",
-                error
-            )
-
-    save_sent_news(
-        new_sent_news
-    )
+    save_sent_events(sent_events)
 
     print("\n==============================")
-    print("FOREX NEWS BOT FINISHED")
+    print("Posts checked:", posts_found)
+    print("High impact USD news:", high_impact_found)
+    print("New alerts sent:", newly_sent)
+    print("Finished.")
     print("==============================")
-    print(f"Total posts checked: {total_found}")
-    print(f"High-impact matches: {total_matched}")
-    print(f"Discord messages sent: {total_sent}")
 
-
-# ==============================
-# RUN BOT
-# ==============================
 
 if __name__ == "__main__":
-    check_news()
+    main()

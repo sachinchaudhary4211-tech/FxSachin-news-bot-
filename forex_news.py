@@ -378,4 +378,82 @@ def send_to_discord(
     forecast,
     previous,
     impact
-)
+):
+
+    # Create image
+    image_bytes = create_news_image(
+        country,
+        event,
+        time_value,
+        forecast,
+        previous,
+        impact
+    )
+
+    # Discord file
+    files = {
+        "file": (
+            "forex_news.png",
+            image_bytes,
+            "image/png"
+        )
+    }
+
+    # Discord message
+    data = {
+        "content": (
+            "🚨 **FOREX NEWS ALERT**\n\n"
+            f"🌍 **Country:** {country}\n"
+            f"📊 **Event:** {event}\n"
+            f"⏰ **Time:** {time_value}\n"
+            f"📈 **Forecast:** {forecast}\n"
+            f"📉 **Previous:** {previous}\n"
+            f"⚠️ **Impact:** {impact}"
+        )
+    }
+
+    # Send webhook
+    try:
+
+        response = requests.post(
+            WEBHOOK_URL,
+            data=data,
+            files=files,
+            timeout=20
+        )
+
+        if response.status_code in [200, 204]:
+
+            print(
+                "Successfully sent Forex News to Discord!"
+            )
+
+        else:
+
+            print(
+                f"Discord error: {response.status_code}"
+            )
+
+            print(response.text)
+
+    except requests.exceptions.RequestException as error:
+
+        print(
+            f"Request error: {error}"
+        )
+
+
+# ==========================================
+# TEST
+# ==========================================
+
+if __name__ == "__main__":
+
+    send_to_discord(
+        country="USD",
+        event="Non-Farm Employment Change",
+        time_value="08:30 AM",
+        forecast="120K",
+        previous="150K",
+        impact="High"
+    )

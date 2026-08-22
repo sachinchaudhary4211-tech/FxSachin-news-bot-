@@ -6,6 +6,9 @@ on:
   schedule:
     - cron: "*/5 * * * *"
 
+permissions:
+  contents: write
+
 jobs:
   forex-news:
     runs-on: ubuntu-latest
@@ -21,8 +24,21 @@ jobs:
 
       - name: Install packages
         run: |
-          python -m pip install --upgrade pip
           pip install requests pillow
 
       - name: Run Forex News Bot
-        run: python forex_news.py
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python forex_news.py
+
+      - name: Save sent events
+        run: |
+          git config user.name "Forex News Bot"
+          git config user.email "bot@github.com"
+
+          git add sent_events.json
+
+          git diff --cached --quiet || git commit -m "Update sent events"
+
+          git push

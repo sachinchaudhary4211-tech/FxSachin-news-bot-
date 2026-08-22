@@ -3,7 +3,7 @@ import json
 import hashlib
 import requests
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, Pillow
 from io import BytesIO
 from datetime import datetime, timezone
 

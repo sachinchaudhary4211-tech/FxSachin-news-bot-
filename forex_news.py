@@ -3,7 +3,6 @@ from datetime import datetime
 
 WEBHOOK_URL = "https://discord.com/api/webhooks/1540641249135165490/0yIDqzxhUMMDbt2sW0MeY27gtNMo0QNOzisEbFtz_PS9p3G2hgA36zs5ZtsfnM6YEbpt"
 
-# Forex Factory RSS calendar
 FEED_URL = "https://www.forexfactory.com/calendar/rss"
 
 def send_to_discord(title, description):
@@ -22,7 +21,18 @@ def send_to_discord(title, description):
     response = requests.post(WEBHOOK_URL, json=data)
     print(response.status_code)
 
-send_to_discord(
-    "🚨 Forex News Bot Test",
-    f"Bot is working successfully! Time: {datetime.now()}"
-)
+
+try:
+    response = requests.get(FEED_URL)
+    response.raise_for_status()
+
+    send_to_discord(
+        "📈 Forex Factory Update",
+        f"Forex Factory calendar checked successfully.\n\nTime: {datetime.now()}"
+    )
+
+except Exception as e:
+    send_to_discord(
+        "❌ Forex News Bot Error",
+        str(e)
+    )

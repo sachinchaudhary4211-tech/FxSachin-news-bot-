@@ -5,7 +5,7 @@ from discord.ext import commands
 # SETTINGS
 # ==========================================
 
-TOKEN = "1540679654275420241"
+TOKEN = "MTU0MDY3OTY1NDI3NTQyMDI0MQ.GLRHVg.2pjATmrU60ILeFVKY41rqxAeB4kkjxh1Ey6VW0"
 
 # NEWS ROLE ID
 ROLE_ID = 1540675428572987452

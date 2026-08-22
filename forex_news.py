@@ -506,6 +506,7 @@ def format_event_time(date_value):
             )
         )
 
+        # ADD UTC TIMEZONE
         return event_date.strftime(
             "%I:%M %p UTC"
         )

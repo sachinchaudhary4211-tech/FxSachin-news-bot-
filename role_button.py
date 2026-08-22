@@ -2,27 +2,19 @@ import os
 import discord
 from discord.ext import commands
 
-
 # ==========================================
-# SETTINGS
+# BOT SETTINGS
 # ==========================================
 
-# Gets the bot token securely from GitHub Secrets
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# Your NEWS role ID
-ROLE_ID = 1540688570480730184
-
-# Channel where the NEWS banner will be sent
-CHANNEL_ID = 1537396245851807788
-
+ROLE_ID = 1540694379767795895
 
 # ==========================================
 # BOT SETUP
 # ==========================================
 
 intents = discord.Intents.default()
-intents.members = True
 
 bot = commands.Bot(
     command_prefix="!",
@@ -31,21 +23,20 @@ bot = commands.Bot(
 
 
 # ==========================================
-# NEWS ROLE BUTTON
+# ROLE BUTTON
 # ==========================================
 
-class NewsRoleButton(discord.ui.View):
+class RoleButton(discord.ui.View):
 
     def __init__(self):
         super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="NEWS",
-        emoji="📰",
-        style=discord.ButtonStyle.primary,
-        custom_id="news_role_button"
+        label="Get Role",
+        style=discord.ButtonStyle.green,
+        custom_id="get_role_button"
     )
-    async def news_button(
+    async def get_role(
         self,
         interaction: discord.Interaction,
         button: discord.ui.Button
@@ -55,7 +46,7 @@ class NewsRoleButton(discord.ui.View):
 
         if role is None:
             await interaction.response.send_message(
-                "❌ NEWS role not found.",
+                "❌ Role not found. Check your ROLE_ID.",
                 ephemeral=True
             )
             return
@@ -65,7 +56,7 @@ class NewsRoleButton(discord.ui.View):
             await interaction.user.remove_roles(role)
 
             await interaction.response.send_message(
-                "🔕 You have been removed from NEWS updates.",
+                f"❌ {role.name} role removed.",
                 ephemeral=True
             )
 
@@ -74,7 +65,7 @@ class NewsRoleButton(discord.ui.View):
             await interaction.user.add_roles(role)
 
             await interaction.response.send_message(
-                "📰 You will now receive NEWS updates!",
+                f"✅ You received the {role.name} role!",
                 ephemeral=True
             )
 
@@ -86,46 +77,13 @@ class NewsRoleButton(discord.ui.View):
 @bot.event
 async def on_ready():
 
-    print(f"Logged in as {bot.user}")
+    bot.add_view(RoleButton())
 
-    bot.add_view(NewsRoleButton())
-
-    channel = bot.get_channel(CHANNEL_ID)
-
-    if channel is None:
-        print("ERROR: Channel not found.")
-        return
-
-    print(f"Bot is ready in channel: {channel.name}")
-
-
-# ==========================================
-# COMMAND TO POST NEWS BANNER
-# ==========================================
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def news(ctx):
-
-    embed = discord.Embed(
-        title="📰 FOREX NEWS UPDATES",
-        description=(
-            "━━━━━━━━━━━━━━━━━━━━\n\n"
-            "**Stay updated with important Forex news.**\n\n"
-            "Click the button below to receive\n"
-            "**automatic NEWS notifications.**\n\n"
-            "🔔 High Impact News\n"
-            "📊 Low Impact News\n"
-            "💵 USD Market Updates\n\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "**Your trade. Your decision. Your responsibility.**"
-        )
-    )
-
-    await ctx.send(
-        embed=embed,
-        view=NewsRoleButton()
-    )
+    print("================================")
+    print(f"Logged in as: {bot.user}")
+    print(f"Bot ID: {bot.user.id}")
+    print("Role button is ready!")
+    print("================================")
 
 
 # ==========================================
@@ -133,6 +91,6 @@ async def news(ctx):
 # ==========================================
 
 if TOKEN is None:
-    print("ERROR: DISCORD_BOT_TOKEN secret was not found.")
+    print("ERROR: DISCORD_BOT_TOKEN is not set!")
 else:
     bot.run(TOKEN)

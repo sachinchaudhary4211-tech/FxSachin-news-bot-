@@ -1,6 +1,8 @@
-name: X Forex News Bot
+name: USD High Impact News Bot
 
 on:
+  schedule:
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -13,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -24,23 +28,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run X Forex News Bot
+      - name: Run USD High Impact News Bot
         env:
-          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          python x_forex_news.py
+        run: python x_forex_news.py
 
-      - name: Save sent X events
+      - name: Save sent events
         run: |
-          git config user.name "Forex News Bot"
-          git config user.email "actions@github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add sent_events.json
 
           if git diff --cached --quiet; then
-            echo "No changes to save."
+            echo "No new sent events to save."
           else
-            git commit -m "Update sent X events"
+            git commit -m "Update sent USD news events"
             git push
           fi

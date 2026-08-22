@@ -12,7 +12,7 @@ import feedparser
 # CONFIGURATION
 # ==================================================
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+DISCORD_WEBHOOK_URL = os.getenv("https://discord.com/api/webhooks/1540670407517151283/tTW18ucJttskrE68l-C8o_57zEyAYAzdrsbufv9V0YzuTss7EhpBCc-vTz-526ATtpFl")
 
 SENT_EVENTS_FILE = "sent_events.json"
 

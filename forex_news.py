@@ -41,7 +41,6 @@ def create_news_image(
     WIDTH = 1400
     HEIGHT = 900
 
-    # Create background
     image = Image.new(
         "RGB",
         (WIDTH, HEIGHT),
@@ -69,7 +68,7 @@ def create_news_image(
         fill="#07111f"
     )
 
-    # Decorative background lines
+    # Decorative lines
     for x in range(0, WIDTH, 60):
 
         draw.line(
@@ -78,7 +77,7 @@ def create_news_image(
             width=1
         )
 
-    # Red right section
+    # Red section
     draw.rectangle(
         [(1050, 0), (WIDTH, 280)],
         fill="#21080d"
@@ -118,7 +117,10 @@ def create_news_image(
             fill=RED
         )
 
-    # Logo
+    # ==========================================
+    # LOGO AND TITLE
+    # ==========================================
+
     draw.text(
         (590, 50),
         "FXSACHIN",
@@ -126,7 +128,6 @@ def create_news_image(
         fill=WHITE
     )
 
-    # FOREX
     draw.text(
         (390, 100),
         "FOREX",
@@ -134,7 +135,6 @@ def create_news_image(
         fill=WHITE
     )
 
-    # NEWS
     draw.text(
         (750, 100),
         "NEWS",
@@ -142,7 +142,6 @@ def create_news_image(
         fill=RED
     )
 
-    # Subtitle
     draw.text(
         (470, 220),
         "STAY AHEAD. TRADE SMART.",
@@ -151,7 +150,7 @@ def create_news_image(
     )
 
     # ==========================================
-    # MAIN NEWS CARD
+    # MAIN CARD
     # ==========================================
 
     card_top = 300
@@ -202,9 +201,9 @@ def create_news_image(
         fill=WHITE
     )
 
-    # Forex News text
+    # Forex News
     draw.text(
-        (510, 350),
+        (650, 350),
         "FOREX NEWS",
         font=get_font(45, True),
         fill=RED
@@ -216,9 +215,9 @@ def create_news_image(
     )
 
     draw.text(
-        (1000, 360),
+        (1070, 360),
         current_date,
-        font=get_font(25),
+        font=get_font(22),
         fill=GRAY
     )
 
@@ -238,11 +237,145 @@ def create_news_image(
     )
 
     draw.text(
-        (130, 455),
+        (130, 450),
         str(country).upper(),
         font=get_font(45, True),
         fill=WHITE
     )
 
     draw.text(
-        (
+        (130, 510),
+        "COUNTRY / CURRENCY",
+        font=get_font(18),
+        fill=GRAY
+    )
+
+    # ==========================================
+    # EVENT BOX
+    # ==========================================
+
+    draw.rounded_rectangle(
+        [
+            (80, 580),
+            (1320, 690)
+        ],
+        radius=20,
+        fill="#0d1522",
+        outline=BORDER,
+        width=2
+    )
+
+    draw.text(
+        (130, 595),
+        "EVENT",
+        font=get_font(20, True),
+        fill=RED
+    )
+
+    # Limit event length
+    event_text = str(event)
+
+    if len(event_text) > 45:
+        event_text = event_text[:42] + "..."
+
+    draw.text(
+        (130, 630),
+        event_text,
+        font=get_font(38, True),
+        fill=WHITE
+    )
+
+    # ==========================================
+    # BOTTOM DETAILS
+    # ==========================================
+
+    sections = [
+        ("TIME", time_value, "#9b8cff"),
+        ("FORECAST", forecast, GREEN),
+        ("PREVIOUS", previous, BLUE),
+        ("IMPACT", str(impact).upper(), impact_color)
+    ]
+
+    start_x = 100
+    box_width = 300
+
+    for i, section in enumerate(sections):
+
+        label = section[0]
+        value = section[1]
+        color = section[2]
+
+        x = start_x + (i * box_width)
+
+        # Divider
+        if i > 0:
+
+            draw.line(
+                [
+                    (x - 30, 720),
+                    (x - 30, 820)
+                ],
+                fill=BORDER,
+                width=2
+            )
+
+        # Label
+        draw.text(
+            (x, 720),
+            label,
+            font=get_font(22, True),
+            fill=color
+        )
+
+        # Value
+        value_color = WHITE
+
+        if label == "IMPACT":
+            value_color = impact_color
+
+        draw.text(
+            (x, 760),
+            str(value),
+            font=get_font(38, True),
+            fill=value_color
+        )
+
+    # ==========================================
+    # FOOTER
+    # ==========================================
+
+    draw.text(
+        (540, 830),
+        "FxSachin • Forex News",
+        font=get_font(20),
+        fill=GRAY
+    )
+
+    # ==========================================
+    # SAVE IMAGE TO MEMORY
+    # ==========================================
+
+    image_bytes = BytesIO()
+
+    image.save(
+        image_bytes,
+        format="PNG"
+    )
+
+    image_bytes.seek(0)
+
+    return image_bytes
+
+
+# ==========================================
+# SEND TO DISCORD
+# ==========================================
+
+def send_to_discord(
+    country,
+    event,
+    time_value,
+    forecast,
+    previous,
+    impact
+)

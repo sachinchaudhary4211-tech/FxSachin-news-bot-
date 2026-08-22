@@ -1,21 +1,13 @@
 import os
 import requests
-
 from io import BytesIO
-from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
+from PIL import Image, ImageDraw, ImageFont
 
 
-# ==================================================
-# DISCORD WEBHOOK
-# ==================================================
-
+# Get webhook URL from GitHub Secret
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-
-# ==================================================
-# FONT FUNCTION
-# ==================================================
 
 def get_font(size, bold=False):
     if bold:
@@ -26,36 +18,19 @@ def get_font(size, bold=False):
     return ImageFont.truetype(path, size)
 
 
-# ==================================================
-# DRAW TEXT FUNCTION
-# ==================================================
-
 def draw_text(draw, position, text, font, fill):
-    draw.text(
-        position,
-        text,
-        font=font,
-        fill=fill
-    )
+    draw.text(position, text, font=font, fill=fill)
 
 
-# ==================================================
-# CREATE NEWS IMAGE
-# ==================================================
-
-def create_news_image(
-    country,
-    event,
-    time_value,
-    forecast,
-    previous,
-    impact
-):
+def create_news_image(country, event, time_value,
+                      forecast, previous, impact):
 
     WIDTH = 1400
     HEIGHT = 900
 
-    # Colors
+    image = Image.new("RGB", (WIDTH, HEIGHT), "#0b1019")
+    draw = ImageDraw.Draw(image)
+
     WHITE = "#f2f4f8"
     GRAY = "#9da7b8"
     RED = "#ff3131"
@@ -64,25 +39,12 @@ def create_news_image(
     DARK = "#111927"
     BORDER = "#2a3445"
 
-    # Create image
-    image = Image.new(
-        "RGB",
-        (WIDTH, HEIGHT),
-        "#0b1019"
-    )
-
-    draw = ImageDraw.Draw(image)
-
-    # ==================================================
     # HEADER
-    # ==================================================
-
     draw.rectangle(
         [(0, 0), (WIDTH, 280)],
         fill="#07111f"
     )
 
-    # Decorative lines
     for x in range(0, WIDTH, 60):
         draw.line(
             [(x, 0), (x + 100, 280)],
@@ -90,50 +52,30 @@ def create_news_image(
             width=1
         )
 
-    # Red background area
     draw.rectangle(
         [(1050, 0), (WIDTH, 280)],
         fill="#21080d"
     )
 
-    # Candlestick decorations
+    # Candlestick decoration
     candle_x = 1080
 
-    candle_heights = [
-        70,
-        120,
-        50,
-        150,
-        90,
-        180
-    ]
-
-    for i, height in enumerate(candle_heights):
-
+    for i, height in enumerate([70, 120, 50, 150, 90, 180]):
         x = candle_x + (i * 50)
         y = 230 - height
 
         draw.line(
-            [
-                (x + 12, y - 20),
-                (x + 12, y + height + 20)
-            ],
+            [(x + 12, y - 20), (x + 12, y + height + 20)],
             fill=RED,
             width=3
         )
 
         draw.rectangle(
-            [
-                (x, y),
-                (x + 24, y + height)
-            ],
+            [(x, y), (x + 24, y + height)],
             fill=RED
         )
 
-    # ==================================================
-    # LOGO
-    # ==================================================
-
+    # Logo
     draw_text(
         draw,
         (590, 50),
@@ -142,10 +84,7 @@ def create_news_image(
         WHITE
     )
 
-    # ==================================================
-    # MAIN TITLE
-    # ==================================================
-
+    # Title
     draw_text(
         draw,
         (390, 100),
@@ -170,10 +109,7 @@ def create_news_image(
         GRAY
     )
 
-    # ==================================================
     # NEWS CARD
-    # ==================================================
-
     card_top = 300
 
     draw.rounded_rectangle(
@@ -184,21 +120,13 @@ def create_news_image(
         width=3
     )
 
-    # ==================================================
-    # IMPACT COLOR
-    # ==================================================
-
+    # Impact color
     impact_color = RED
 
     if impact.lower() == "medium":
         impact_color = "#ffb020"
-
     elif impact.lower() == "low":
         impact_color = GREEN
-
-    # ==================================================
-    # IMPACT HEADER
-    # ==================================================
 
     draw.ellipse(
         [(80, 350), (130, 400)],
@@ -221,13 +149,7 @@ def create_news_image(
         RED
     )
 
-    # ==================================================
-    # DATE
-    # ==================================================
-
-    current_date = datetime.now().strftime(
-        "%b %d, %Y"
-    )
+    current_date = datetime.now().strftime("%b %d, %Y")
 
     draw_text(
         draw,
@@ -237,10 +159,7 @@ def create_news_image(
         GRAY
     )
 
-    # ==================================================
     # COUNTRY
-    # ==================================================
-
     draw.rounded_rectangle(
         [(80, 440), (1320, 550)],
         radius=20,
@@ -252,227 +171,4 @@ def create_news_image(
     draw_text(
         draw,
         (130, 460),
-        str(country).upper(),
-        get_font(45, True),
-        WHITE
-    )
-
-    draw_text(
-        draw,
-        (130, 510),
-        "COUNTRY / CURRENCY",
-        get_font(18),
-        GRAY
-    )
-
-    # ==================================================
-    # EVENT
-    # ==================================================
-
-    draw.rounded_rectangle(
-        [(80, 580), (1320, 690)],
-        radius=20,
-        fill="#0d1522",
-        outline=BORDER,
-        width=2
-    )
-
-    draw_text(
-        draw,
-        (130, 600),
-        "EVENT",
-        get_font(20, True),
-        RED
-    )
-
-    # Limit event text
-    event_text = str(event)[:45]
-
-    draw_text(
-        draw,
-        (130, 635),
-        event_text,
-        get_font(40, True),
-        WHITE
-    )
-
-    # ==================================================
-    # BOTTOM DETAILS
-    # ==================================================
-
-    sections = [
-        ("TIME", time_value, "#9b8cff"),
-        ("FORECAST", forecast, GREEN),
-        ("PREVIOUS", previous, BLUE),
-        ("IMPACT", impact.upper(), impact_color)
-    ]
-
-    start_x = 100
-    box_width = 300
-
-    for i, (label, value, color) in enumerate(sections):
-
-        x = start_x + (i * box_width)
-
-        # Vertical separator
-        if i > 0:
-
-            draw.line(
-                [
-                    (x - 30, 720),
-                    (x - 30, 820)
-                ],
-                fill=BORDER,
-                width=2
-            )
-
-        # Label
-        draw_text(
-            draw,
-            (x, 720),
-            label,
-            get_font(22, True),
-            color
-        )
-
-        # Value
-        value_color = WHITE
-
-        if label == "IMPACT":
-            value_color = color
-
-        draw_text(
-            draw,
-            (x, 760),
-            str(value),
-            get_font(38, True),
-            value_color
-        )
-
-    # ==================================================
-    # FOOTER
-    # ==================================================
-
-    draw_text(
-        draw,
-        (550, 835),
-        "FxSachin • Forex News",
-        get_font(20),
-        GRAY
-    )
-
-    # ==================================================
-    # SAVE IMAGE TO MEMORY
-    # ==================================================
-
-    image_bytes = BytesIO()
-
-    image.save(
-        image_bytes,
-        format="PNG"
-    )
-
-    image_bytes.seek(0)
-
-    return image_bytes
-
-
-# ==================================================
-# SEND NEWS TO DISCORD
-# ==================================================
-
-def send_to_discord(
-    country,
-    event,
-    time_value,
-    forecast,
-    previous,
-    impact
-):
-
-    if not WEBHOOK_URL:
-        print("ERROR: DISCORD_WEBHOOK_URL is not set.")
-        return
-
-    image_file = create_news_image(
-        country,
-        event,
-        time_value,
-        forecast,
-        previous,
-        impact
-    )
-
-    files = {
-        "file": (
-            "forex_news.png",
-            image_file,
-            "image/png"
-        )
-    }
-
-    payload = {
-        "content": "",
-        "embeds": [
-            {
-                "image": {
-                    "url": "attachment://forex_news.png"
-                },
-                "footer": {
-                    "text": "FxSachin • Automated Forex News"
-                }
-            }
-        ]
-    }
-
-    try:
-
-        response = requests.post(
-            WEBHOOK_URL,
-            data={
-                "payload_json": __import__("json").dumps(
-                    payload
-                )
-            },
-            files=files,
-            timeout=30
-        )
-
-        print(
-            "Discord Status:",
-            response.status_code
-        )
-
-        print(
-            "Discord Response:",
-            response.text
-        )
-
-        response.raise_for_status()
-
-        print("News sent successfully!")
-
-    except requests.exceptions.RequestException as error:
-
-        print(
-            "Discord sending failed:",
-            error
-        )
-
-
-# ==================================================
-# TEST NEWS
-# ==================================================
-
-if __name__ == "__main__":
-
-    print("Starting Forex News Bot...")
-
-    send_to_discord(
-        country="USD",
-        event="US Non-Farm Payrolls",
-        time_value="08:30",
-        forecast="175K",
-        previous="147K",
-        impact="High"
-    )
+        country

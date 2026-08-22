@@ -15,52 +15,20 @@ from datetime import datetime, timezone
 # Discord webhook from GitHub Secret
 WEBHOOK_URL = os.getenv("https://discord.com/api/webhooks/1540668433094545409/3w_Q2EZ2R94Px5w6zOcGD57d65okSUNZFgz6B5eC5wu20V0BZma-8TB81pOstzwRNcjN")
 
-# Forex economic calendar
+# Your ONE Discord role ID
+ROLE_ID = "1540675428572987452"
+
+# Forex Factory economic calendar feed
 CALENDAR_URL = (
     "https://nfs.faireconomy.media/"
     "ff_calendar_thisweek.json"
 )
 
-# Separate duplicate tracking file
-SENT_EVENTS_FILE = "sent_low_events.json"
+# File used to prevent duplicate alerts
+SENT_EVENTS_FILE = "sent_events.json"
 
-# Alert this many minutes before the event
+# Alert before the event
 ALERT_WINDOW_MINUTES = 30
-
-# LOW IMPACT ONLY
-ALLOWED_IMPACTS = [
-    "Low"
-]
-
-# Major forex currencies
-ALLOWED_CURRENCIES = [
-    "USD",
-    "EUR",
-    "GBP",
-    "JPY",
-    "AUD",
-    "CAD",
-    "CHF",
-    "NZD"
-]
-
-# Additional market keywords
-ALLOWED_KEYWORDS = [
-    "bitcoin",
-    "btc",
-    "ethereum",
-    "ether",
-    "eth",
-    "gold",
-    "xau",
-    "silver",
-    "xag",
-    "nasdaq",
-    "nasdaq 100",
-    "crypto",
-    "cryptocurrency",
-    "digital currency"
-]
 
 
 # ==========================================
@@ -84,7 +52,7 @@ def get_font(size, bold=False):
 
 
 # ==========================================
-# CREATE LOW IMPACT NEWS IMAGE
+# CREATE FOREX NEWS IMAGE
 # ==========================================
 
 def create_news_image(
@@ -135,13 +103,16 @@ def create_news_image(
             width=1
         )
 
-    # Green section for low impact
+    # Red section
     draw.rectangle(
         [(1050, 0), (WIDTH, 280)],
-        fill="#08210f"
+        fill="#21080d"
     )
 
-    # Candlestick decoration
+    # ==========================================
+    # CANDLESTICK DECORATION
+    # ==========================================
+
     candle_x = 1080
 
     candle_heights = [
@@ -163,7 +134,7 @@ def create_news_image(
                 (x + 12, y - 20),
                 (x + 12, y + height + 20)
             ],
-            fill=GREEN,
+            fill=RED,
             width=3
         )
 
@@ -172,7 +143,7 @@ def create_news_image(
                 (x, y),
                 (x + 24, y + height)
             ],
-            fill=GREEN
+            fill=RED
         )
 
     # ==========================================
@@ -197,7 +168,7 @@ def create_news_image(
         (750, 100),
         "NEWS",
         font=get_font(100, True),
-        fill=GREEN
+        fill=RED
     )
 
     draw.text(
@@ -224,8 +195,23 @@ def create_news_image(
         width=3
     )
 
-    # Low impact color
-    impact_color = GREEN
+    # ==========================================
+    # IMPACT COLOR
+    # ==========================================
+
+    impact_lower = str(impact).lower()
+
+    if impact_lower == "high":
+        impact_color = RED
+
+    elif impact_lower == "medium":
+        impact_color = ORANGE
+
+    elif impact_lower == "low":
+        impact_color = GREEN
+
+    else:
+        impact_color = BLUE
 
     # ==========================================
     # IMPACT HEADER
@@ -241,7 +227,7 @@ def create_news_image(
 
     draw.text(
         (160, 350),
-        "LOW IMPACT",
+        f"{str(impact).upper()} IMPACT",
         font=get_font(45, True),
         fill=WHITE
     )
@@ -250,7 +236,7 @@ def create_news_image(
         (650, 350),
         "FOREX NEWS",
         font=get_font(45, True),
-        fill=GREEN
+        fill=RED
     )
 
     current_date = datetime.now().strftime(
@@ -312,7 +298,7 @@ def create_news_image(
         (130, 595),
         "EVENT",
         font=get_font(20, True),
-        fill=GREEN
+        fill=RED
     )
 
     event_text = str(event)
@@ -335,7 +321,11 @@ def create_news_image(
         ("TIME", time_value, "#9b8cff"),
         ("FORECAST", forecast, GREEN),
         ("PREVIOUS", previous, BLUE),
-        ("IMPACT", "LOW", GREEN)
+        (
+            "IMPACT",
+            str(impact).upper(),
+            impact_color
+        )
     ]
 
     start_x = 100
@@ -370,7 +360,7 @@ def create_news_image(
         value_color = WHITE
 
         if label == "IMPACT":
-            value_color = GREEN
+            value_color = impact_color
 
         draw.text(
             (x, 760),
@@ -385,7 +375,7 @@ def create_news_image(
 
     draw.text(
         (540, 830),
-        "FxSachin • Low Impact Forex News",
+        "FxSachin • Forex News",
         font=get_font(20),
         fill=GRAY
     )
@@ -468,32 +458,13 @@ def create_event_id(event):
 
 
 # ==========================================
-# CHECK MARKET KEYWORDS
-# ==========================================
-
-def is_allowed_market_event(title):
-
-    title_lower = str(title).lower()
-
-    for keyword in ALLOWED_KEYWORDS:
-
-        if keyword in title_lower:
-            return True
-
-    return False
-
-
-# ==========================================
-# FETCH FOREX CALENDAR
+# GET FOREX NEWS
 # ==========================================
 
 def get_forex_news():
 
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "ForexNewsBot/1.0"
-        )
+        "User-Agent": "Mozilla/5.0 FxSachinNewsBot/1.0"
     }
 
     try:
@@ -602,12 +573,12 @@ def send_to_discord(
     if not WEBHOOK_URL:
 
         print(
-            "ERROR: DISCORD_WEBHOOK_URL "
-            "is not set."
+            "ERROR: DISCORD_WEBHOOK_URL is not set."
         )
 
         return False
 
+    # Create news image
     image_bytes = create_news_image(
         country,
         event,
@@ -617,24 +588,30 @@ def send_to_discord(
         impact
     )
 
+    # Image file
     files = {
         "file": (
-            "low_forex_news.png",
+            "forex_news.png",
             image_bytes,
             "image/png"
         )
     }
 
+    # Discord message + role ping
     data = {
         "content": (
-            "🟢 **LOW IMPACT FOREX NEWS**\n\n"
-            f"🌍 **Country / Market:** {country}\n"
+            f"<@&{ROLE_ID}>\n\n"
+            "🚨 **HIGH IMPACT FOREX NEWS ALERT**\n\n"
+            f"🌍 **Country:** {country}\n"
             f"📊 **Event:** {event}\n"
             f"⏰ **Time:** {time_value}\n"
             f"📈 **Forecast:** {forecast}\n"
             f"📉 **Previous:** {previous}\n"
-            f"🟢 **Impact:** LOW"
-        )
+            f"🔴 **Impact:** {impact}"
+        ),
+        "allowed_mentions": {
+            "roles": [ROLE_ID]
+        }
     }
 
     try:
@@ -649,8 +626,7 @@ def send_to_discord(
         if response.status_code in [200, 204]:
 
             print(
-                f"Successfully sent LOW impact event: "
-                f"{country} - {event}"
+                f"Successfully sent: {event}"
             )
 
             return True
@@ -674,13 +650,13 @@ def send_to_discord(
 
 
 # ==========================================
-# MAIN
+# MAIN BOT
 # ==========================================
 
 def main():
 
     print(
-        "Fetching LOW impact forex calendar..."
+        "Fetching Forex Factory calendar..."
     )
 
     events = get_forex_news()
@@ -694,7 +670,6 @@ def main():
         return
 
     sent_events = load_sent_events()
-
     sent_set = set(sent_events)
 
     new_sent_events = []
@@ -703,7 +678,7 @@ def main():
 
         impact = str(
             event.get("impact", "")
-        )
+        ).strip()
 
         country = str(
             event.get("country", "")
@@ -711,59 +686,52 @@ def main():
 
         title = str(
             event.get("title", "")
-        )
+        ).strip()
 
         date_value = event.get(
             "date",
             ""
         )
 
-        # LOW IMPACT ONLY
-        if impact != "Low":
-            continue
+        # ======================================
+        # HIGH IMPACT ONLY
+        # ======================================
 
-        # Forex currency or allowed market
-        currency_allowed = (
-            country in ALLOWED_CURRENCIES
-        )
-
-        market_allowed = (
-            is_allowed_market_event(title)
-        )
-
-        if (
-            not currency_allowed
-            and not market_allowed
-        ):
+        if impact.lower() != "high":
             continue
 
         if not title:
             continue
 
-        # Send only within alert window
+        # Check if event is coming soon
         if not is_event_within_alert_window(
             date_value
         ):
             continue
 
+        # Create unique ID
         event_id = create_event_id(event)
 
-        # Prevent duplicate alerts
+        # Skip already sent events
         if event_id in sent_set:
             continue
 
+        # Get event information
         time_value = format_event_time(
             date_value
         )
 
-        forecast = event.get(
-            "forecast"
-        ) or "N/A"
+        forecast = (
+            event.get("forecast")
+            or "N/A"
+        )
 
-        previous = event.get(
-            "previous"
-        ) or "N/A"
+        previous = (
+            event.get("previous")
+            or "N/A"
+        )
 
+        # Send alert
         success = send_to_discord(
             country=country,
             event=title,
@@ -773,11 +741,16 @@ def main():
             impact=impact
         )
 
+        # Save only if Discord send succeeded
         if success:
 
             new_sent_events.append(
                 event_id
             )
+
+    # ==========================================
+    # SAVE NEW SENT EVENTS
+    # ==========================================
 
     if new_sent_events:
 
@@ -785,7 +758,7 @@ def main():
             new_sent_events
         )
 
-        # Keep only latest 500 event IDs
+        # Keep only last 500 event IDs
         sent_events = sent_events[-500:]
 
         save_sent_events(
@@ -794,13 +767,13 @@ def main():
 
         print(
             f"Sent {len(new_sent_events)} "
-            f"new LOW impact event(s)."
+            f"new High Impact event(s)."
         )
 
     else:
 
         print(
-            "No new LOW impact events to send."
+            "No new High Impact events to send."
         )
 
 

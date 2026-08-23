@@ -2,82 +2,62 @@ name: USD High Impact News Bot
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  x-forex-news:
+  send-usd-high-impact-news:
     runs-on: ubuntu-latest
 
     steps:
 
-      # ==========================================
-      # CHECKOUT REPOSITORY
-      # ==========================================
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          persist-credentials: true
 
-
-      # ==========================================
-      # SET UP PYTHON
-      # ==========================================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-
-      # ==========================================
-      # INSTALL PACKAGES
-      # ==========================================
-      - name: Install packages
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests pillow
 
-
-      # ==========================================
-      # CHECK DISCORD WEBHOOK SECRET
-      # ==========================================
       - name: Check Discord Webhook Secret
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then
-            echo "ERROR: DISCORD_WEBHOOK_URL secret is MISSING"
+            echo "ERROR: DISCORD_WEBHOOK_URL secret is missing."
             exit 1
           else
-            echo "SUCCESS: Discord webhook secret is AVAILABLE"
+            echo "SUCCESS: Discord webhook secret found."
           fi
 
-
-      # ==========================================
-      # RUN USD HIGH IMPACT NEWS BOT
-      # ==========================================
       - name: Run USD High Impact News Bot
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python x_forex_news.py
+        run: |
+          python x_forex_news.py
 
-
-      # ==========================================
-      # SAVE SENT EVENTS
-      # ==========================================
       - name: Save sent events
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ -f sent_events.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add sent_events.json
+            git add sent_events.json
 
-          if git diff --cached --quiet; then
-            echo "No new sent events to save."
+            if ! git diff --cached --quiet; then
+              git commit -m "Update sent USD news events"
+              git push
+            else
+              echo "No new sent events to save."
+            fi
           else
-            git commit -m "Update sent USD news events"
-            git push
+            echo "sent_events.json does not exist yet."
           fi

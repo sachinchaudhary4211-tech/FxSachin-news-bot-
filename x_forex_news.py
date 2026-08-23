@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-ROLE_ID = "1540675428572987452"
+ROLE_ID = "1540957741089169468"
 
 CALENDAR_URL = (
     "https://nfs.faireconomy.media/"

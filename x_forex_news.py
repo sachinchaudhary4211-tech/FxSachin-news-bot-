@@ -6,31 +6,29 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 
 # ==========================================
 # SETTINGS
 # ==========================================
 
-# Discord webhook from GitHub Secret
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-# Discord role ID
 ROLE_ID = "1540675428572987452"
 
-# Forex Factory economic calendar feed
 CALENDAR_URL = (
     "https://nfs.faireconomy.media/"
     "ff_calendar_thisweek.json"
 )
 
-# File used to prevent duplicate alerts
 SENT_EVENTS_FILE = "sent_events.json"
 
-# Alert before the event
-# Bot will send USD High Impact news
-# when it is within the next 90 minutes
+# Send alert when event is within 90 minutes
 ALERT_WINDOW_MINUTES = 90
+
+# Indian Standard Time
+IST = ZoneInfo("Asia/Kolkata")
 
 
 # ==========================================
@@ -222,7 +220,7 @@ def create_news_image(
     )
 
     current_date = datetime.now(
-        timezone.utc
+        IST
     ).strftime("%b %d, %Y")
 
     draw.text(
@@ -510,7 +508,7 @@ def parse_event_date(date_value):
 
 
 # ==========================================
-# FORMAT EVENT TIME
+# FORMAT EVENT TIME IN IST
 # ==========================================
 
 def format_event_time(date_value):
@@ -522,13 +520,39 @@ def format_event_time(date_value):
     if not event_date:
         return "TBA"
 
-    return event_date.strftime(
+    event_date_ist = event_date.astimezone(
+        IST
+    )
+
+    return event_date_ist.strftime(
+        "%I:%M %p IST"
+    )
+
+
+# ==========================================
+# FORMAT EVENT TIME IN UTC
+# ==========================================
+
+def format_event_time_utc(date_value):
+
+    event_date = parse_event_date(
+        date_value
+    )
+
+    if not event_date:
+        return "TBA"
+
+    event_date_utc = event_date.astimezone(
+        timezone.utc
+    )
+
+    return event_date_utc.strftime(
         "%I:%M %p UTC"
     )
 
 
 # ==========================================
-# CHECK ALERT WINDOW
+# GET MINUTES UNTIL EVENT
 # ==========================================
 
 def get_minutes_until_event(date_value):
@@ -544,8 +568,12 @@ def get_minutes_until_event(date_value):
         timezone.utc
     )
 
+    event_date_utc = event_date.astimezone(
+        timezone.utc
+    )
+
     minutes_until = (
-        event_date - now
+        event_date_utc - now
     ).total_seconds() / 60
 
     return minutes_until
@@ -668,6 +696,11 @@ def main():
     )
 
     print(
+        f"Current IST time: "
+        f"{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}"
+    )
+
+    print(
         f"Alert window: "
         f"{ALERT_WINDOW_MINUTES} minutes"
     )
@@ -765,11 +798,16 @@ def main():
         )
 
         print(
-            f"Event date: {date_value}"
+            f"Original event date: {date_value}"
         )
 
         print(
-            f"Event time: "
+            f"Event time UTC: "
+            f"{format_event_time_utc(date_value)}"
+        )
+
+        print(
+            f"Event time IST: "
             f"{format_event_time(date_value)}"
         )
 
@@ -872,7 +910,6 @@ def main():
             new_sent_events
         )
 
-        # Keep only latest 500 event IDs
         sent_events = sent_events[-500:]
 
         save_sent_events(

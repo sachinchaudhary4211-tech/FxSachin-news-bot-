@@ -1,11 +1,9 @@
 import os
-import json
-import hashlib
 import requests
 
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
@@ -15,19 +13,11 @@ from zoneinfo import ZoneInfo
 
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
-ROLE_ID = "1540957741089169468"
-
 CALENDAR_URL = (
     "https://nfs.faireconomy.media/"
     "ff_calendar_thisweek.json"
 )
 
-SENT_EVENTS_FILE = "sent_events.json"
-
-# Send alert when event is within 90 minutes
-ALERT_WINDOW_MINUTES = 90
-
-# Indian Standard Time
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -38,21 +28,15 @@ IST = ZoneInfo("Asia/Kolkata")
 def get_font(size, bold=False):
 
     if bold:
-        path = (
-            "/usr/share/fonts/truetype/"
-            "dejavu/DejaVuSans-Bold.ttf"
-        )
+        path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     else:
-        path = (
-            "/usr/share/fonts/truetype/"
-            "dejavu/DejaVuSans.ttf"
-        )
+        path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
     return ImageFont.truetype(path, size)
 
 
 # ==========================================
-# CREATE FOREX NEWS IMAGE
+# CREATE NEWS IMAGE
 # ==========================================
 
 def create_news_image(
@@ -84,7 +68,10 @@ def create_news_image(
     DARK = "#111927"
     BORDER = "#2a3445"
 
-    # Header
+    # ==========================================
+    # HEADER
+    # ==========================================
+
     draw.rectangle(
         [(0, 0), (WIDTH, 280)],
         fill="#07111f"
@@ -98,7 +85,6 @@ def create_news_image(
             width=1
         )
 
-    # Red section
     draw.rectangle(
         [(1050, 0), (WIDTH, 280)],
         fill="#21080d"
@@ -167,12 +153,13 @@ def create_news_image(
         fill=GRAY
     )
 
-    # Main card
-    card_top = 300
+    # ==========================================
+    # MAIN CARD
+    # ==========================================
 
     draw.rounded_rectangle(
         [
-            (40, card_top),
+            (40, 300),
             (1360, 850)
         ],
         radius=30,
@@ -196,7 +183,7 @@ def create_news_image(
     else:
         impact_color = BLUE
 
-    # Impact header
+    # Impact
     draw.ellipse(
         [
             (80, 350),
@@ -230,7 +217,10 @@ def create_news_image(
         fill=GRAY
     )
 
-    # Country box
+    # ==========================================
+    # COUNTRY
+    # ==========================================
+
     draw.rounded_rectangle(
         [
             (80, 440),
@@ -256,7 +246,10 @@ def create_news_image(
         fill=GRAY
     )
 
-    # Event box
+    # ==========================================
+    # EVENT
+    # ==========================================
+
     draw.rounded_rectangle(
         [
             (80, 580),
@@ -287,16 +280,15 @@ def create_news_image(
         fill=WHITE
     )
 
-    # Bottom details
+    # ==========================================
+    # BOTTOM DETAILS
+    # ==========================================
+
     sections = [
         ("TIME", time_value, "#9b8cff"),
         ("FORECAST", forecast, GREEN),
         ("PREVIOUS", previous, BLUE),
-        (
-            "IMPACT",
-            str(impact).upper(),
-            impact_color
-        )
+        ("IMPACT", str(impact).upper(), impact_color)
     ]
 
     start_x = 100
@@ -361,71 +353,6 @@ def create_news_image(
 
 
 # ==========================================
-# LOAD SENT EVENTS
-# ==========================================
-
-def load_sent_events():
-
-    if not os.path.exists(SENT_EVENTS_FILE):
-        return []
-
-    try:
-
-        with open(
-            SENT_EVENTS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            return json.load(file)
-
-    except Exception as error:
-
-        print(
-            f"WARNING: Could not load sent events: {error}"
-        )
-
-        return []
-
-
-# ==========================================
-# SAVE SENT EVENTS
-# ==========================================
-
-def save_sent_events(events):
-
-    with open(
-        SENT_EVENTS_FILE,
-        "w",
-        encoding="utf-8"
-    ) as file:
-
-        json.dump(
-            events,
-            file,
-            indent=4
-        )
-
-
-# ==========================================
-# CREATE UNIQUE EVENT ID
-# ==========================================
-
-def create_event_id(event):
-
-    event_data = (
-        f"{event.get('date', '')}|"
-        f"{event.get('country', '')}|"
-        f"{event.get('title', '')}|"
-        f"{event.get('impact', '')}"
-    )
-
-    return hashlib.md5(
-        event_data.encode("utf-8")
-    ).hexdigest()
-
-
-# ==========================================
 # GET FOREX NEWS
 # ==========================================
 
@@ -448,8 +375,7 @@ def get_forex_news():
         events = response.json()
 
         print(
-            f"SUCCESS: Found {len(events)} "
-            f"calendar event(s)."
+            f"SUCCESS: Found {len(events)} calendar event(s)."
         )
 
         return events
@@ -457,7 +383,7 @@ def get_forex_news():
     except requests.exceptions.RequestException as error:
 
         print(
-            f"Calendar request error: {error}"
+            f"CALENDAR ERROR: {error}"
         )
 
         return []
@@ -465,20 +391,20 @@ def get_forex_news():
     except ValueError as error:
 
         print(
-            f"Calendar JSON error: {error}"
+            f"JSON ERROR: {error}"
         )
 
         return []
 
 
 # ==========================================
-# PARSE EVENT DATE
+# FORMAT EVENT TIME IN IST
 # ==========================================
 
-def parse_event_date(date_value):
+def format_event_time(date_value):
 
     if not date_value:
-        return None
+        return "TBA"
 
     try:
 
@@ -489,94 +415,21 @@ def parse_event_date(date_value):
             )
         )
 
-        if event_date.tzinfo is None:
+        event_date_ist = event_date.astimezone(
+            IST
+        )
 
-            event_date = event_date.replace(
-                tzinfo=timezone.utc
-            )
-
-        return event_date
+        return event_date_ist.strftime(
+            "%I:%M %p IST"
+        )
 
     except Exception as error:
 
         print(
-            f"DATE PARSE ERROR: "
-            f"{date_value} -> {error}"
+            f"TIME FORMAT ERROR: {error}"
         )
 
-        return None
-
-
-# ==========================================
-# FORMAT EVENT TIME IN IST
-# ==========================================
-
-def format_event_time(date_value):
-
-    event_date = parse_event_date(
-        date_value
-    )
-
-    if not event_date:
         return "TBA"
-
-    event_date_ist = event_date.astimezone(
-        IST
-    )
-
-    return event_date_ist.strftime(
-        "%I:%M %p IST"
-    )
-
-
-# ==========================================
-# FORMAT EVENT TIME IN UTC
-# ==========================================
-
-def format_event_time_utc(date_value):
-
-    event_date = parse_event_date(
-        date_value
-    )
-
-    if not event_date:
-        return "TBA"
-
-    event_date_utc = event_date.astimezone(
-        timezone.utc
-    )
-
-    return event_date_utc.strftime(
-        "%I:%M %p UTC"
-    )
-
-
-# ==========================================
-# GET MINUTES UNTIL EVENT
-# ==========================================
-
-def get_minutes_until_event(date_value):
-
-    event_date = parse_event_date(
-        date_value
-    )
-
-    if not event_date:
-        return None
-
-    now = datetime.now(
-        timezone.utc
-    )
-
-    event_date_utc = event_date.astimezone(
-        timezone.utc
-    )
-
-    minutes_until = (
-        event_date_utc - now
-    ).total_seconds() / 60
-
-    return minutes_until
 
 
 # ==========================================
@@ -595,7 +448,7 @@ def send_to_discord(
     if not WEBHOOK_URL:
 
         print(
-            "ERROR: DISCORD_WEBHOOK_URL missing."
+            "ERROR: DISCORD_WEBHOOK_URL secret is missing."
         )
 
         return False
@@ -617,21 +470,17 @@ def send_to_discord(
         )
     }
 
+    # NO ROLE PING
     data = {
         "content": (
-            f"<@&{ROLE_ID}>\n\n"
-            "🚨 **HIGH IMPACT USD NEWS ALERT**\n\n"
+            "🚨 **USD HIGH IMPACT NEWS**\n\n"
             f"🌍 **Country:** {country}\n"
             f"📊 **Event:** {event}\n"
             f"⏰ **Time:** {time_value}\n"
             f"📈 **Forecast:** {forecast}\n"
             f"📉 **Previous:** {previous}\n"
             f"🔴 **Impact:** {impact}"
-        ),
-
-        "allowed_mentions": {
-            "roles": [ROLE_ID]
-        }
+        )
     }
 
     try:
@@ -646,15 +495,13 @@ def send_to_discord(
         if response.status_code in [200, 204]:
 
             print(
-                f"SUCCESS: Alert sent to Discord: "
-                f"{event}"
+                f"SUCCESS: Sent to Discord -> {event}"
             )
 
             return True
 
         print(
-            f"DISCORD ERROR: "
-            f"{response.status_code}"
+            f"DISCORD ERROR: {response.status_code}"
         )
 
         print(
@@ -673,49 +520,30 @@ def send_to_discord(
 
 
 # ==========================================
-# MAIN BOT
+# MAIN
 # ==========================================
 
 def main():
 
-    print(
-        "========================================"
-    )
-
-    print(
-        "Fetching Forex Factory calendar..."
-    )
-
-    print(
-        "========================================"
-    )
-
-    print(
-        f"Current UTC time: "
-        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
-    )
+    print("=" * 50)
+    print("FXSACHIN USD HIGH IMPACT NEWS BOT")
+    print("=" * 50)
 
     print(
         f"Current IST time: "
         f"{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}"
     )
 
-    print(
-        f"Alert window: "
-        f"{ALERT_WINDOW_MINUTES} minutes"
-    )
-
     if not WEBHOOK_URL:
 
         print(
-            "ERROR: DISCORD_WEBHOOK_URL missing."
+            "ERROR: Discord webhook environment variable missing."
         )
 
         return
 
     print(
-        "SUCCESS: Discord webhook environment "
-        "variable found."
+        "SUCCESS: Discord webhook environment variable found."
     )
 
     events = get_forex_news()
@@ -723,29 +551,17 @@ def main():
     if not events:
 
         print(
-            "No calendar events found."
+            "ERROR: No calendar events found."
         )
 
         return
 
-    sent_events = load_sent_events()
-    sent_set = set(sent_events)
-
     print(
-        f"Previously sent events stored: "
-        f"{len(sent_set)}"
+        "\nChecking USD High Impact events..."
     )
-
-    new_sent_events = []
 
     usd_high_found = 0
-    skipped_time = 0
-    skipped_duplicate = 0
     sent_count = 0
-
-    print(
-        "\nChecking calendar events...\n"
-    )
 
     for event in events:
 
@@ -766,110 +582,32 @@ def main():
             ""
         )
 
-        # USD only
+        # USD ONLY
         if country != "USD":
             continue
 
-        # High impact only
+        # HIGH IMPACT ONLY
         if impact.lower() != "high":
             continue
 
+        # Skip empty titles
         if not title:
-
-            print(
-                "SKIPPED: USD High Impact event "
-                "has no title."
-            )
-
             continue
 
         usd_high_found += 1
 
-        minutes_until = get_minutes_until_event(
-            date_value
-        )
+        print("-" * 50)
 
         print(
-            "----------------------------------------"
-        )
-
-        print(
-            f"USD HIGH EVENT: {title}"
-        )
-
-        print(
-            f"Original event date: {date_value}"
-        )
-
-        print(
-            f"Event time UTC: "
-            f"{format_event_time_utc(date_value)}"
-        )
-
-        print(
-            f"Event time IST: "
-            f"{format_event_time(date_value)}"
-        )
-
-        if minutes_until is None:
-
-            print(
-                "SKIPPED: Could not read event date."
-            )
-
-            skipped_time += 1
-
-            continue
-
-        print(
-            f"Minutes until event: "
-            f"{minutes_until:.2f}"
-        )
-
-        # Event already happened
-        if minutes_until < 0:
-
-            print(
-                "SKIPPED: Event has already passed."
-            )
-
-            skipped_time += 1
-
-            continue
-
-        # Event is too far away
-        if minutes_until > ALERT_WINDOW_MINUTES:
-
-            print(
-                f"SKIPPED: Event is more than "
-                f"{ALERT_WINDOW_MINUTES} minutes away."
-            )
-
-            skipped_time += 1
-
-            continue
-
-        event_id = create_event_id(
-            event
-        )
-
-        # Skip already sent event
-        if event_id in sent_set:
-
-            print(
-                "SKIPPED: This event was already sent."
-            )
-
-            skipped_duplicate += 1
-
-            continue
-
-        print(
-            "EVENT QUALIFIES FOR DISCORD ALERT."
+            f"USD HIGH EVENT FOUND: {title}"
         )
 
         time_value = format_event_time(
             date_value
+        )
+
+        print(
+            f"Event time: {time_value}"
         )
 
         forecast = (
@@ -882,6 +620,10 @@ def main():
             or "N/A"
         )
 
+        print(
+            "SENDING TO DISCORD..."
+        )
+
         success = send_to_discord(
             country=country,
             event=title,
@@ -892,72 +634,33 @@ def main():
         )
 
         if success:
-
-            new_sent_events.append(
-                event_id
-            )
-
-            sent_set.add(
-                event_id
-            )
-
             sent_count += 1
 
-    # Save sent events
-    if new_sent_events:
-
-        sent_events.extend(
-            new_sent_events
-        )
-
-        sent_events = sent_events[-500:]
-
-        save_sent_events(
-            sent_events
-        )
+    print("\n" + "=" * 50)
+    print("BOT SUMMARY")
+    print("=" * 50)
 
     print(
-        "\n========================================"
+        f"USD High Impact events found: {usd_high_found}"
     )
 
     print(
-        "BOT SUMMARY"
+        f"Alerts sent to Discord: {sent_count}"
     )
 
-    print(
-        "========================================"
-    )
-
-    print(
-        f"USD High Impact events found: "
-        f"{usd_high_found}"
-    )
-
-    print(
-        f"Skipped because of time: "
-        f"{skipped_time}"
-    )
-
-    print(
-        f"Skipped because already sent: "
-        f"{skipped_duplicate}"
-    )
-
-    print(
-        f"Alerts successfully sent: "
-        f"{sent_count}"
-    )
+    print("=" * 50)
 
     if sent_count == 0:
 
         print(
-            "No new USD High Impact events "
-            "were sent during this run."
+            "No alerts were sent. Check the Discord error above."
         )
 
-    print(
-        "========================================"
-    )
+    else:
+
+        print(
+            "SUCCESS: Test completed."
+        )
 
 
 # ==========================================

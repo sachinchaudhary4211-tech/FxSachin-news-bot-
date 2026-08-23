@@ -28,7 +28,9 @@ CALENDAR_URL = (
 SENT_EVENTS_FILE = "sent_events.json"
 
 # Alert before the event
-ALERT_WINDOW_MINUTES = 30
+# Bot will send USD High Impact news
+# when it is within the next 90 minutes
+ALERT_WINDOW_MINUTES = 90
 
 
 # ==========================================
@@ -379,7 +381,11 @@ def load_sent_events():
 
             return json.load(file)
 
-    except Exception:
+    except Exception as error:
+
+        print(
+            f"WARNING: Could not load sent events: {error}"
+        )
 
         return []
 
@@ -441,7 +447,14 @@ def get_forex_news():
 
         response.raise_for_status()
 
-        return response.json()
+        events = response.json()
+
+        print(
+            f"SUCCESS: Found {len(events)} "
+            f"calendar event(s)."
+        )
+
+        return events
 
     except requests.exceptions.RequestException as error:
 
@@ -451,42 +464,23 @@ def get_forex_news():
 
         return []
 
+    except ValueError as error:
 
-# ==========================================
-# FORMAT EVENT TIME
-# ==========================================
-
-def format_event_time(date_value):
-
-    if not date_value:
-        return "TBA"
-
-    try:
-
-        event_date = datetime.fromisoformat(
-            str(date_value).replace(
-                "Z",
-                "+00:00"
-            )
+        print(
+            f"Calendar JSON error: {error}"
         )
 
-        return event_date.strftime(
-            "%I:%M %p UTC"
-        )
-
-    except Exception:
-
-        return str(date_value)
+        return []
 
 
 # ==========================================
-# CHECK ALERT WINDOW
+# PARSE EVENT DATE
 # ==========================================
 
-def is_event_within_alert_window(date_value):
+def parse_event_date(date_value):
 
     if not date_value:
-        return False
+        return None
 
     try:
 
@@ -503,22 +497,58 @@ def is_event_within_alert_window(date_value):
                 tzinfo=timezone.utc
             )
 
-        now = datetime.now(
-            timezone.utc
+        return event_date
+
+    except Exception as error:
+
+        print(
+            f"DATE PARSE ERROR: "
+            f"{date_value} -> {error}"
         )
 
-        minutes_until = (
-            event_date - now
-        ).total_seconds() / 60
+        return None
 
-        return (
-            0 <= minutes_until
-            <= ALERT_WINDOW_MINUTES
-        )
 
-    except Exception:
+# ==========================================
+# FORMAT EVENT TIME
+# ==========================================
 
-        return False
+def format_event_time(date_value):
+
+    event_date = parse_event_date(
+        date_value
+    )
+
+    if not event_date:
+        return "TBA"
+
+    return event_date.strftime(
+        "%I:%M %p UTC"
+    )
+
+
+# ==========================================
+# CHECK ALERT WINDOW
+# ==========================================
+
+def get_minutes_until_event(date_value):
+
+    event_date = parse_event_date(
+        date_value
+    )
+
+    if not event_date:
+        return None
+
+    now = datetime.now(
+        timezone.utc
+    )
+
+    minutes_until = (
+        event_date - now
+    ).total_seconds() / 60
+
+    return minutes_until
 
 
 # ==========================================
@@ -588,16 +618,20 @@ def send_to_discord(
         if response.status_code in [200, 204]:
 
             print(
-                f"SUCCESS: Alert sent to Discord: {event}"
+                f"SUCCESS: Alert sent to Discord: "
+                f"{event}"
             )
 
             return True
 
         print(
-            f"DISCORD ERROR: {response.status_code}"
+            f"DISCORD ERROR: "
+            f"{response.status_code}"
         )
 
-        print(response.text)
+        print(
+            response.text
+        )
 
         return False
 
@@ -617,7 +651,25 @@ def send_to_discord(
 def main():
 
     print(
+        "========================================"
+    )
+
+    print(
         "Fetching Forex Factory calendar..."
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"Current UTC time: "
+        f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    )
+
+    print(
+        f"Alert window: "
+        f"{ALERT_WINDOW_MINUTES} minutes"
     )
 
     if not WEBHOOK_URL:
@@ -629,7 +681,8 @@ def main():
         return
 
     print(
-        "SUCCESS: Discord webhook environment variable found."
+        "SUCCESS: Discord webhook environment "
+        "variable found."
     )
 
     events = get_forex_news()
@@ -645,7 +698,21 @@ def main():
     sent_events = load_sent_events()
     sent_set = set(sent_events)
 
+    print(
+        f"Previously sent events stored: "
+        f"{len(sent_set)}"
+    )
+
     new_sent_events = []
+
+    usd_high_found = 0
+    skipped_time = 0
+    skipped_duplicate = 0
+    sent_count = 0
+
+    print(
+        "\nChecking calendar events...\n"
+    )
 
     for event in events:
 
@@ -655,7 +722,7 @@ def main():
 
         country = str(
             event.get("country", "")
-        ).upper()
+        ).strip().upper()
 
         title = str(
             event.get("title", "")
@@ -675,19 +742,93 @@ def main():
             continue
 
         if not title:
+
+            print(
+                "SKIPPED: USD High Impact event "
+                "has no title."
+            )
+
             continue
 
-        # Event must be within alert window
-        if not is_event_within_alert_window(
+        usd_high_found += 1
+
+        minutes_until = get_minutes_until_event(
             date_value
-        ):
+        )
+
+        print(
+            "----------------------------------------"
+        )
+
+        print(
+            f"USD HIGH EVENT: {title}"
+        )
+
+        print(
+            f"Event date: {date_value}"
+        )
+
+        print(
+            f"Event time: "
+            f"{format_event_time(date_value)}"
+        )
+
+        if minutes_until is None:
+
+            print(
+                "SKIPPED: Could not read event date."
+            )
+
+            skipped_time += 1
+
             continue
 
-        event_id = create_event_id(event)
+        print(
+            f"Minutes until event: "
+            f"{minutes_until:.2f}"
+        )
+
+        # Event already happened
+        if minutes_until < 0:
+
+            print(
+                "SKIPPED: Event has already passed."
+            )
+
+            skipped_time += 1
+
+            continue
+
+        # Event is too far away
+        if minutes_until > ALERT_WINDOW_MINUTES:
+
+            print(
+                f"SKIPPED: Event is more than "
+                f"{ALERT_WINDOW_MINUTES} minutes away."
+            )
+
+            skipped_time += 1
+
+            continue
+
+        event_id = create_event_id(
+            event
+        )
 
         # Skip already sent event
         if event_id in sent_set:
+
+            print(
+                "SKIPPED: This event was already sent."
+            )
+
+            skipped_duplicate += 1
+
             continue
+
+        print(
+            "EVENT QUALIFIES FOR DISCORD ALERT."
+        )
 
         time_value = format_event_time(
             date_value
@@ -718,6 +859,12 @@ def main():
                 event_id
             )
 
+            sent_set.add(
+                event_id
+            )
+
+            sent_count += 1
+
     # Save sent events
     if new_sent_events:
 
@@ -725,24 +872,55 @@ def main():
             new_sent_events
         )
 
+        # Keep only latest 500 event IDs
         sent_events = sent_events[-500:]
 
         save_sent_events(
             sent_events
         )
 
-        print(
-            f"SUCCESS: Sent "
-            f"{len(new_sent_events)} "
-            f"new USD High Impact event(s)."
-        )
+    print(
+        "\n========================================"
+    )
 
-    else:
+    print(
+        "BOT SUMMARY"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"USD High Impact events found: "
+        f"{usd_high_found}"
+    )
+
+    print(
+        f"Skipped because of time: "
+        f"{skipped_time}"
+    )
+
+    print(
+        f"Skipped because already sent: "
+        f"{skipped_duplicate}"
+    )
+
+    print(
+        f"Alerts successfully sent: "
+        f"{sent_count}"
+    )
+
+    if sent_count == 0:
 
         print(
             "No new USD High Impact events "
-            "to send."
+            "were sent during this run."
         )
+
+    print(
+        "========================================"
+    )
 
 
 # ==========================================

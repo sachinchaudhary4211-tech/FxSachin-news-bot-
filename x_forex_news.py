@@ -1,15 +1,18 @@
 import os
+import json
+import hashlib
+import html
 import requests
+import feedparser
 
-from PIL import Image, ImageDraw, ImageFont
-from io import BytesIO
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from urllib.parse import quote_plus
 
 
-# ==========================================
+# =========================================================
 # SETTINGS
-# ==========================================
+# =========================================================
 
 WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
@@ -18,401 +21,286 @@ CALENDAR_URL = (
     "ff_calendar_thisweek.json"
 )
 
+SENT_EVENTS_FILE = "sent_events.json"
+
 IST = ZoneInfo("Asia/Kolkata")
 
-
-# ==========================================
-# FONT FUNCTION
-# ==========================================
-
-def get_font(size, bold=False):
-
-    if bold:
-        path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    else:
-        path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-
-    return ImageFont.truetype(path, size)
+REQUEST_TIMEOUT = 30
 
 
-# ==========================================
-# CREATE NEWS IMAGE
-# ==========================================
+# =========================================================
+# IMPORTANT ECONOMIC EVENTS
+# =========================================================
 
-def create_news_image(
-    country,
-    event,
-    time_value,
-    forecast,
-    previous,
-    impact
-):
+# Only these important USD events will be sent.
+# This prevents random high-impact events from spamming Discord.
 
-    WIDTH = 1400
-    HEIGHT = 900
+IMPORTANT_ECONOMIC_KEYWORDS = [
 
-    image = Image.new(
-        "RGB",
-        (WIDTH, HEIGHT),
-        "#0b1019"
+    "non-farm employment change",
+    "nonfarm employment change",
+    "non-farm payroll",
+    "nonfarm payroll",
+    "nfp",
+
+    "unemployment rate",
+
+    "cpi",
+    "consumer price index",
+
+    "core cpi",
+
+    "pce price index",
+    "core pce",
+
+    "fomc",
+    "federal funds rate",
+    "interest rate decision",
+    "rate statement",
+
+    "fomc press conference",
+
+    "powell speaks",
+    "fed chair",
+    "federal reserve chair",
+    "fed chairman",
+
+    "gdp",
+    "gross domestic product",
+
+    "retail sales",
+
+    "employment change",
+
+    "average hourly earnings"
+]
+
+
+# =========================================================
+# BREAKING NEWS SEARCH QUERIES
+# =========================================================
+
+BREAKING_NEWS_QUERIES = [
+
+    # Trump market-moving actions
+    (
+        "Trump "
+        "(tariffs OR sanctions OR Iran OR China OR war "
+        "OR military OR Fed OR emergency)"
+    ),
+
+    # Iran / Middle East
+    (
+        "Iran "
+        "(attack OR war OR strike OR Israel OR US "
+        "OR sanctions OR nuclear OR military OR oil)"
+    ),
+
+    # Major geopolitical market events
+    (
+        "(war OR military strike OR sanctions OR nuclear "
+        "OR ceasefire OR attack) "
+        "(United States OR Iran OR Israel)"
+    ),
+
+    # Oil / Middle East market shocks
+    (
+        "(Strait of Hormuz OR oil supply OR oil shock) "
+        "(Iran OR war OR attack OR military)"
+    ),
+
+    # Major tariff shocks
+    (
+        "(Trump OR United States) "
+        "(tariff OR trade war) "
+        "(China OR global markets)"
     )
-
-    draw = ImageDraw.Draw(image)
-
-    WHITE = "#f2f4f8"
-    GRAY = "#9da7b8"
-    RED = "#ff3131"
-    BLUE = "#3d8cff"
-    GREEN = "#55c74d"
-    ORANGE = "#ffb020"
-    DARK = "#111927"
-    BORDER = "#2a3445"
-
-    # ==========================================
-    # HEADER
-    # ==========================================
-
-    draw.rectangle(
-        [(0, 0), (WIDTH, 280)],
-        fill="#07111f"
-    )
-
-    for x in range(0, WIDTH, 60):
-
-        draw.line(
-            [(x, 0), (x + 100, 280)],
-            fill="#101b2b",
-            width=1
-        )
-
-    draw.rectangle(
-        [(1050, 0), (WIDTH, 280)],
-        fill="#21080d"
-    )
-
-    # Candlestick decoration
-    candle_x = 1080
-
-    candle_heights = [
-        70,
-        120,
-        50,
-        150,
-        90,
-        180
-    ]
-
-    for i, height in enumerate(candle_heights):
-
-        x = candle_x + (i * 50)
-        y = 230 - height
-
-        draw.line(
-            [
-                (x + 12, y - 20),
-                (x + 12, y + height + 20)
-            ],
-            fill=RED,
-            width=3
-        )
-
-        draw.rectangle(
-            [
-                (x, y),
-                (x + 24, y + height)
-            ],
-            fill=RED
-        )
-
-    # Logo
-    draw.text(
-        (590, 50),
-        "FXSACHIN",
-        font=get_font(38, True),
-        fill=WHITE
-    )
-
-    draw.text(
-        (390, 100),
-        "FOREX",
-        font=get_font(100, True),
-        fill=WHITE
-    )
-
-    draw.text(
-        (750, 100),
-        "NEWS",
-        font=get_font(100, True),
-        fill=RED
-    )
-
-    draw.text(
-        (470, 220),
-        "STAY AHEAD. TRADE SMART.",
-        font=get_font(28),
-        fill=GRAY
-    )
-
-    # ==========================================
-    # MAIN CARD
-    # ==========================================
-
-    draw.rounded_rectangle(
-        [
-            (40, 300),
-            (1360, 850)
-        ],
-        radius=30,
-        fill=DARK,
-        outline=BORDER,
-        width=3
-    )
-
-    # Impact color
-    impact_lower = str(impact).lower()
-
-    if impact_lower == "high":
-        impact_color = RED
-
-    elif impact_lower == "medium":
-        impact_color = ORANGE
-
-    elif impact_lower == "low":
-        impact_color = GREEN
-
-    else:
-        impact_color = BLUE
-
-    # Impact
-    draw.ellipse(
-        [
-            (80, 350),
-            (130, 400)
-        ],
-        fill=impact_color
-    )
-
-    draw.text(
-        (160, 350),
-        f"{str(impact).upper()} IMPACT",
-        font=get_font(45, True),
-        fill=WHITE
-    )
-
-    draw.text(
-        (650, 350),
-        "FOREX NEWS",
-        font=get_font(45, True),
-        fill=RED
-    )
-
-    current_date = datetime.now(
-        IST
-    ).strftime("%b %d, %Y")
-
-    draw.text(
-        (1070, 360),
-        current_date,
-        font=get_font(22),
-        fill=GRAY
-    )
-
-    # ==========================================
-    # COUNTRY
-    # ==========================================
-
-    draw.rounded_rectangle(
-        [
-            (80, 440),
-            (1320, 550)
-        ],
-        radius=20,
-        fill="#0d1522",
-        outline=BORDER,
-        width=2
-    )
-
-    draw.text(
-        (130, 450),
-        str(country).upper(),
-        font=get_font(45, True),
-        fill=WHITE
-    )
-
-    draw.text(
-        (130, 510),
-        "COUNTRY / CURRENCY",
-        font=get_font(18),
-        fill=GRAY
-    )
-
-    # ==========================================
-    # EVENT
-    # ==========================================
-
-    draw.rounded_rectangle(
-        [
-            (80, 580),
-            (1320, 690)
-        ],
-        radius=20,
-        fill="#0d1522",
-        outline=BORDER,
-        width=2
-    )
-
-    draw.text(
-        (130, 595),
-        "EVENT",
-        font=get_font(20, True),
-        fill=RED
-    )
-
-    event_text = str(event)
-
-    if len(event_text) > 45:
-        event_text = event_text[:42] + "..."
-
-    draw.text(
-        (130, 630),
-        event_text,
-        font=get_font(38, True),
-        fill=WHITE
-    )
-
-    # ==========================================
-    # BOTTOM DETAILS
-    # ==========================================
-
-    sections = [
-        ("TIME", time_value, "#9b8cff"),
-        ("FORECAST", forecast, GREEN),
-        ("PREVIOUS", previous, BLUE),
-        ("IMPACT", str(impact).upper(), impact_color)
-    ]
-
-    start_x = 100
-    box_width = 300
-
-    for i, section in enumerate(sections):
-
-        label = section[0]
-        value = section[1]
-        color = section[2]
-
-        x = start_x + (i * box_width)
-
-        if i > 0:
-
-            draw.line(
-                [
-                    (x - 30, 720),
-                    (x - 30, 820)
-                ],
-                fill=BORDER,
-                width=2
-            )
-
-        draw.text(
-            (x, 720),
-            label,
-            font=get_font(22, True),
-            fill=color
-        )
-
-        value_color = WHITE
-
-        if label == "IMPACT":
-            value_color = impact_color
-
-        draw.text(
-            (x, 760),
-            str(value),
-            font=get_font(38, True),
-            fill=value_color
-        )
-
-    # Footer
-    draw.text(
-        (540, 830),
-        "FxSachin • Forex News",
-        font=get_font(20),
-        fill=GRAY
-    )
-
-    image_bytes = BytesIO()
-
-    image.save(
-        image_bytes,
-        format="PNG"
-    )
-
-    image_bytes.seek(0)
-
-    return image_bytes
+]
 
 
-# ==========================================
-# GET FOREX NEWS
-# ==========================================
+# =========================================================
+# STRONG BREAKING NEWS WORDS
+# =========================================================
 
-def get_forex_news():
+STRONG_BREAKING_KEYWORDS = [
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 FxSachinNewsBot/1.0"
-    }
+    "attack",
+    "attacks",
+    "attacked",
+
+    "strike",
+    "strikes",
+    "struck",
+
+    "war",
+    "warfare",
+
+    "military action",
+    "military strike",
+
+    "missile",
+    "missiles",
+
+    "bomb",
+    "bombing",
+
+    "sanction",
+    "sanctions",
+
+    "tariff",
+    "tariffs",
+
+    "trade war",
+
+    "nuclear",
+
+    "ceasefire",
+
+    "emergency",
+
+    "mobilization",
+
+    "blockade",
+
+    "strait of hormuz",
+
+    "oil supply",
+
+    "oil shock",
+
+    "invasion",
+
+    "invade",
+
+    "retaliation",
+
+    "retaliate"
+]
+
+
+# =========================================================
+# IMPORTANT PEOPLE / COUNTRIES
+# =========================================================
+
+BREAKING_TOPIC_KEYWORDS = [
+
+    "trump",
+
+    "iran",
+
+    "israel",
+
+    "united states",
+    "u.s.",
+    "us military",
+
+    "china",
+
+    "russia",
+
+    "middle east"
+]
+
+
+# =========================================================
+# LOAD SENT ITEMS
+# =========================================================
+
+def load_sent_items():
+
+    if not os.path.exists(SENT_EVENTS_FILE):
+
+        return []
 
     try:
 
-        response = requests.get(
-            CALENDAR_URL,
-            headers=headers,
-            timeout=30
-        )
+        with open(
+            SENT_EVENTS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
 
-        response.raise_for_status()
+            data = json.load(file)
 
-        events = response.json()
+            if isinstance(data, list):
 
-        print(
-            f"SUCCESS: Found {len(events)} calendar event(s)."
-        )
+                return data
 
-        return events
+            return []
 
-    except requests.exceptions.RequestException as error:
+    except Exception as error:
 
         print(
-            f"CALENDAR ERROR: {error}"
-        )
-
-        return []
-
-    except ValueError as error:
-
-        print(
-            f"JSON ERROR: {error}"
+            f"WARNING: Could not load sent items: {error}"
         )
 
         return []
 
 
-# ==========================================
-# FORMAT EVENT TIME IN IST
-# ==========================================
+# =========================================================
+# SAVE SENT ITEMS
+# =========================================================
+
+def save_sent_items(items):
+
+    try:
+
+        # Keep only the newest 1000 IDs.
+        items = items[-1000:]
+
+        with open(
+            SENT_EVENTS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                items,
+                file,
+                indent=4
+            )
+
+        print(
+            f"SUCCESS: Saved {len(items)} sent IDs."
+        )
+
+    except Exception as error:
+
+        print(
+            f"ERROR: Could not save sent items: {error}"
+        )
+
+
+# =========================================================
+# CREATE UNIQUE ID
+# =========================================================
+
+def create_unique_id(text):
+
+    return hashlib.sha256(
+        text.encode("utf-8")
+    ).hexdigest()
+
+
+# =========================================================
+# FORMAT EVENT TIME
+# =========================================================
 
 def format_event_time(date_value):
 
     if not date_value:
+
         return "TBA"
 
     try:
 
+        date_text = str(date_value).replace(
+            "Z",
+            "+00:00"
+        )
+
         event_date = datetime.fromisoformat(
-            str(date_value).replace(
-                "Z",
-                "+00:00"
-            )
+            date_text
         )
 
         event_date_ist = event_date.astimezone(
@@ -420,7 +308,7 @@ def format_event_time(date_value):
         )
 
         return event_date_ist.strftime(
-            "%I:%M %p IST"
+            "%d %b %Y • %I:%M %p IST"
         )
 
     except Exception as error:
@@ -429,79 +317,365 @@ def format_event_time(date_value):
             f"TIME FORMAT ERROR: {error}"
         )
 
-        return "TBA"
+        return str(date_value)
 
 
-# ==========================================
-# SEND TO DISCORD
-# ==========================================
+# =========================================================
+# CHECK IMPORTANT ECONOMIC EVENT
+# =========================================================
 
-def send_to_discord(
-    country,
-    event,
-    time_value,
-    forecast,
-    previous,
-    impact
-):
+def is_important_economic_event(title):
 
-    if not WEBHOOK_URL:
+    title_lower = str(title).lower()
 
-        print(
-            "ERROR: DISCORD_WEBHOOK_URL secret is missing."
-        )
+    for keyword in IMPORTANT_ECONOMIC_KEYWORDS:
 
-        return False
+        if keyword in title_lower:
 
-    image_bytes = create_news_image(
-        country,
-        event,
-        time_value,
-        forecast,
-        previous,
-        impact
-    )
+            return True
 
-    files = {
-        "file": (
-            "forex_news.png",
-            image_bytes,
-            "image/png"
-        )
-    }
+    return False
 
-    # NO ROLE PING
-    data = {
-        "content": (
-            "🚨 **USD HIGH IMPACT NEWS**\n\n"
-            f"🌍 **Country:** {country}\n"
-            f"📊 **Event:** {event}\n"
-            f"⏰ **Time:** {time_value}\n"
-            f"📈 **Forecast:** {forecast}\n"
-            f"📉 **Previous:** {previous}\n"
-            f"🔴 **Impact:** {impact}"
+
+# =========================================================
+# GET FOREX FACTORY CALENDAR
+# =========================================================
+
+def get_forex_calendar():
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "FxSachinMarketNewsBot/1.0"
         )
     }
 
     try:
 
-        response = requests.post(
-            WEBHOOK_URL,
-            data=data,
-            files=files,
-            timeout=30
+        print(
+            "Fetching Forex Factory calendar..."
         )
 
-        if response.status_code in [200, 204]:
+        response = requests.get(
+            CALENDAR_URL,
+            headers=headers,
+            timeout=REQUEST_TIMEOUT
+        )
+
+        response.raise_for_status()
+
+        events = response.json()
+
+        print(
+            f"SUCCESS: Found {len(events)} "
+            f"calendar event(s)."
+        )
+
+        return events
+
+    except Exception as error:
+
+        print(
+            f"FOREX CALENDAR ERROR: {error}"
+        )
+
+        return []
+
+
+# =========================================================
+# CLEAN HTML
+# =========================================================
+
+def clean_text(text):
+
+    if not text:
+
+        return ""
+
+    text = html.unescape(
+        str(text)
+    )
+
+    text = text.replace(
+        "<br>",
+        " "
+    )
+
+    text = text.replace(
+        "<br/>",
+        " "
+    )
+
+    return text.strip()
+
+
+# =========================================================
+# CHECK BREAKING NEWS IMPORTANCE
+# =========================================================
+
+def is_market_moving_breaking_news(
+    title,
+    summary
+):
+
+    text = (
+        f"{title} {summary}"
+    ).lower()
+
+    strong_count = 0
+
+    for keyword in STRONG_BREAKING_KEYWORDS:
+
+        if keyword in text:
+
+            strong_count += 1
+
+    topic_found = False
+
+    for keyword in BREAKING_TOPIC_KEYWORDS:
+
+        if keyword in text:
+
+            topic_found = True
+
+            break
+
+    # Must contain at least one important
+    # geopolitical / market-moving topic.
+    if not topic_found:
+
+        return False
+
+    # Require strong market-moving language.
+    if strong_count < 1:
+
+        return False
+
+    return True
+
+
+# =========================================================
+# GET GOOGLE NEWS RSS
+# =========================================================
+
+def get_breaking_news():
+
+    all_articles = []
+
+    for search_query in BREAKING_NEWS_QUERIES:
+
+        try:
+
+            encoded_query = quote_plus(
+                search_query
+            )
+
+            rss_url = (
+                "https://news.google.com/rss/search"
+                f"?q={encoded_query}"
+                "&hl=en-US"
+                "&gl=US"
+                "&ceid=US:en"
+            )
 
             print(
-                f"SUCCESS: Sent to Discord -> {event}"
+                f"Checking breaking news query: "
+                f"{search_query}"
+            )
+
+            feed = feedparser.parse(
+                rss_url
+            )
+
+            for entry in feed.entries:
+
+                title = clean_text(
+                    entry.get(
+                        "title",
+                        ""
+                    )
+                )
+
+                summary = clean_text(
+                    entry.get(
+                        "summary",
+                        ""
+                    )
+                )
+
+                link = entry.get(
+                    "link",
+                    ""
+                )
+
+                published = entry.get(
+                    "published",
+                    ""
+                )
+
+                source = ""
+
+                if "source" in entry:
+
+                    try:
+
+                        source = entry.source.get(
+                            "title",
+                            ""
+                        )
+
+                    except Exception:
+
+                        source = ""
+
+                if not title:
+
+                    continue
+
+                all_articles.append({
+
+                    "title": title,
+                    "summary": summary,
+                    "link": link,
+                    "published": published,
+                    "source": source
+
+                })
+
+        except Exception as error:
+
+            print(
+                f"BREAKING NEWS ERROR: {error}"
+            )
+
+    print(
+        f"SUCCESS: Found {len(all_articles)} "
+        f"breaking news article(s)."
+    )
+
+    return all_articles
+
+
+# =========================================================
+# SEND ECONOMIC NEWS TO DISCORD
+# =========================================================
+
+def send_economic_news(
+    title,
+    event_time,
+    forecast,
+    previous
+):
+
+    content = (
+        "🚨 **MAJOR MARKET NEWS**\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"🇺🇸 **USD EVENT:** {title}\n\n"
+        f"⏰ **Time:** {event_time}\n"
+        f"📊 **Forecast:** {forecast}\n"
+        f"📈 **Previous:** {previous}\n\n"
+        "🎯 **Potentially important for:**\n"
+        "🥇 Gold (XAUUSD)\n"
+        "₿ Bitcoin (BTC)\n"
+        "💵 USD / Forex\n\n"
+        "⚠️ High market volatility possible."
+    )
+
+    return send_discord_message(
+        content
+    )
+
+
+# =========================================================
+# SEND BREAKING NEWS TO DISCORD
+# =========================================================
+
+def send_breaking_news(
+    title,
+    source,
+    published,
+    link
+):
+
+    content = (
+        "🚨🚨 **BREAKING MARKET NEWS** 🚨🚨\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📰 **{title}**\n\n"
+    )
+
+    if source:
+
+        content += (
+            f"🏢 **Source:** {source}\n"
+        )
+
+    if published:
+
+        content += (
+            f"🕒 **Published:** {published}\n"
+        )
+
+    content += (
+        "\n🎯 **Possible market impact:**\n"
+        "🥇 Gold (XAUUSD)\n"
+        "₿ Bitcoin (BTC)\n"
+        "🛢 Oil\n"
+        "💵 USD / Forex\n\n"
+        "⚠️ Check market reaction immediately."
+    )
+
+    if link:
+
+        content += (
+            f"\n\n🔗 {link}"
+        )
+
+    return send_discord_message(
+        content
+    )
+
+
+# =========================================================
+# SEND MESSAGE TO DISCORD
+# =========================================================
+
+def send_discord_message(content):
+
+    if not WEBHOOK_URL:
+
+        print(
+            "ERROR: DISCORD_WEBHOOK_URL "
+            "secret is missing."
+        )
+
+        return False
+
+    try:
+
+        response = requests.post(
+            WEBHOOK_URL,
+            json={
+                "content": content
+            },
+            timeout=REQUEST_TIMEOUT
+        )
+
+        if response.status_code in [
+
+            200,
+            204
+
+        ]:
+
+            print(
+                "SUCCESS: Discord message sent."
             )
 
             return True
 
         print(
-            f"DISCORD ERROR: {response.status_code}"
+            f"DISCORD ERROR: "
+            f"{response.status_code}"
         )
 
         print(
@@ -510,7 +684,7 @@ def send_to_discord(
 
         return False
 
-    except requests.exceptions.RequestException as error:
+    except Exception as error:
 
         print(
             f"DISCORD EXCEPTION: {error}"
@@ -519,62 +693,56 @@ def send_to_discord(
         return False
 
 
-# ==========================================
-# MAIN
-# ==========================================
+# =========================================================
+# CHECK IMPORTANT ECONOMIC NEWS
+# =========================================================
 
-def main():
-
-    print("=" * 50)
-    print("FXSACHIN USD HIGH IMPACT NEWS BOT")
-    print("=" * 50)
+def check_economic_news(sent_items):
 
     print(
-        f"Current IST time: "
-        f"{datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S IST')}"
+        "\n========================================"
     )
-
-    if not WEBHOOK_URL:
-
-        print(
-            "ERROR: Discord webhook environment variable missing."
-        )
-
-        return
 
     print(
-        "SUCCESS: Discord webhook environment variable found."
+        "CHECKING MAJOR ECONOMIC EVENTS"
     )
-
-    events = get_forex_news()
-
-    if not events:
-
-        print(
-            "ERROR: No calendar events found."
-        )
-
-        return
 
     print(
-        "\nChecking USD High Impact events..."
+        "========================================"
     )
 
-    usd_high_found = 0
+    events = get_forex_calendar()
+
+    sent_set = set(
+        sent_items
+    )
+
+    new_ids = []
+
+    found_count = 0
     sent_count = 0
 
     for event in events:
 
-        impact = str(
-            event.get("impact", "")
-        ).strip()
-
         country = str(
-            event.get("country", "")
-        ).strip().upper()
+            event.get(
+                "country",
+                ""
+            )
+        ).upper().strip()
+
+        impact = str(
+            event.get(
+                "impact",
+                ""
+            )
+        ).lower().strip()
 
         title = str(
-            event.get("title", "")
+            event.get(
+                "title",
+                ""
+            )
         ).strip()
 
         date_value = event.get(
@@ -584,88 +752,353 @@ def main():
 
         # USD ONLY
         if country != "USD":
+
             continue
 
         # HIGH IMPACT ONLY
-        if impact.lower() != "high":
+        if impact != "high":
+
             continue
 
-        # Skip empty titles
-        if not title:
+        # IMPORTANT EVENTS ONLY
+        if not is_important_economic_event(
+            title
+        ):
+
+            print(
+                f"FILTERED OUT: {title}"
+            )
+
             continue
 
-        usd_high_found += 1
+        found_count += 1
 
-        print("-" * 50)
-
-        print(
-            f"USD HIGH EVENT FOUND: {title}"
+        unique_text = (
+            f"ECONOMIC|"
+            f"{country}|"
+            f"{title}|"
+            f"{date_value}"
         )
 
-        time_value = format_event_time(
+        event_id = create_unique_id(
+            unique_text
+        )
+
+        print(
+            f"\nIMPORTANT EVENT: {title}"
+        )
+
+        if event_id in sent_set:
+
+            print(
+                "SKIPPED: Already sent."
+            )
+
+            continue
+
+        event_time = format_event_time(
             date_value
         )
 
-        print(
-            f"Event time: {time_value}"
-        )
-
         forecast = (
-            event.get("forecast")
+            event.get(
+                "forecast"
+            )
             or "N/A"
         )
 
         previous = (
-            event.get("previous")
+            event.get(
+                "previous"
+            )
             or "N/A"
         )
 
         print(
-            "SENDING TO DISCORD..."
+            "NEW IMPORTANT EVENT FOUND."
         )
 
-        success = send_to_discord(
-            country=country,
-            event=title,
-            time_value=time_value,
+        success = send_economic_news(
+
+            title=title,
+
+            event_time=event_time,
+
             forecast=forecast,
-            previous=previous,
-            impact=impact
+
+            previous=previous
+
         )
 
         if success:
+
             sent_count += 1
 
-    print("\n" + "=" * 50)
-    print("BOT SUMMARY")
-    print("=" * 50)
+            sent_set.add(
+                event_id
+            )
+
+            new_ids.append(
+                event_id
+            )
 
     print(
-        f"USD High Impact events found: {usd_high_found}"
+        f"\nImportant economic events found: "
+        f"{found_count}"
     )
 
     print(
-        f"Alerts sent to Discord: {sent_count}"
+        f"New economic alerts sent: "
+        f"{sent_count}"
     )
 
-    print("=" * 50)
+    return new_ids
 
-    if sent_count == 0:
 
-        print(
-            "No alerts were sent. Check the Discord error above."
+# =========================================================
+# CHECK BREAKING NEWS
+# =========================================================
+
+def check_breaking_news(sent_items):
+
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "CHECKING BREAKING MARKET NEWS"
+    )
+
+    print(
+        "========================================"
+    )
+
+    articles = get_breaking_news()
+
+    sent_set = set(
+        sent_items
+    )
+
+    new_ids = []
+
+    sent_count = 0
+
+    checked_titles = set()
+
+    for article in articles:
+
+        title = article.get(
+            "title",
+            ""
         )
 
-    else:
-
-        print(
-            "SUCCESS: Test completed."
+        summary = article.get(
+            "summary",
+            ""
         )
 
+        link = article.get(
+            "link",
+            ""
+        )
 
-# ==========================================
-# RUN BOT
-# ==========================================
+        source = article.get(
+            "source",
+            ""
+        )
+
+        published = article.get(
+            "published",
+            ""
+        )
+
+        title_key = title.lower().strip()
+
+        # Prevent duplicate title
+        # appearing from multiple searches.
+        if title_key in checked_titles:
+
+            continue
+
+        checked_titles.add(
+            title_key
+        )
+
+        if not is_market_moving_breaking_news(
+
+            title,
+            summary
+
+        ):
+
+            continue
+
+        unique_text = (
+            f"BREAKING|"
+            f"{title}|"
+            f"{link}"
+        )
+
+        article_id = create_unique_id(
+            unique_text
+        )
+
+        print(
+            f"\nMARKET BREAKING NEWS: {title}"
+        )
+
+        if article_id in sent_set:
+
+            print(
+                "SKIPPED: Already sent."
+            )
+
+            continue
+
+        success = send_breaking_news(
+
+            title=title,
+
+            source=source,
+
+            published=published,
+
+            link=link
+
+        )
+
+        if success:
+
+            sent_count += 1
+
+            sent_set.add(
+                article_id
+            )
+
+            new_ids.append(
+                article_id
+            )
+
+    print(
+        f"\nNew breaking alerts sent: "
+        f"{sent_count}"
+    )
+
+    return new_ids
+
+
+# =========================================================
+# MAIN
+# =========================================================
+
+def main():
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "FXSACHIN SMART MARKET NEWS BOT"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"Current IST: "
+        f"{datetime.now(IST).strftime('%Y-%m-%d %I:%M:%S %p IST')}"
+    )
+
+    if not WEBHOOK_URL:
+
+        print(
+            "ERROR: DISCORD_WEBHOOK_URL "
+            "environment variable missing."
+        )
+
+        return
+
+    print(
+        "SUCCESS: Discord webhook secret found."
+    )
+
+    sent_items = load_sent_items()
+
+    print(
+        f"Previously sent items: "
+        f"{len(sent_items)}"
+    )
+
+    # =============================================
+    # ECONOMIC NEWS
+    # =============================================
+
+    economic_new_ids = check_economic_news(
+        sent_items
+    )
+
+    # Add new economic IDs immediately
+    # so breaking-news checking also knows them.
+    sent_items.extend(
+        economic_new_ids
+    )
+
+    # =============================================
+    # BREAKING NEWS
+    # =============================================
+
+    breaking_new_ids = check_breaking_news(
+        sent_items
+    )
+
+    sent_items.extend(
+        breaking_new_ids
+    )
+
+    # =============================================
+    # SAVE
+    # =============================================
+
+    save_sent_items(
+        sent_items
+    )
+
+    print(
+        "\n========================================"
+    )
+
+    print(
+        "FINAL SUMMARY"
+    )
+
+    print(
+        "========================================"
+    )
+
+    print(
+        f"Economic alerts sent: "
+        f"{len(economic_new_ids)}"
+    )
+
+    print(
+        f"Breaking alerts sent: "
+        f"{len(breaking_new_ids)}"
+    )
+
+    print(
+        f"Total alerts sent: "
+        f"{len(economic_new_ids) + len(breaking_new_ids)}"
+    )
+
+    print(
+        "========================================"
+    )
+
+
+# =========================================================
+# RUN
+# =========================================================
 
 if __name__ == "__main__":
 
